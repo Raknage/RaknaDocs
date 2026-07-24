@@ -1,0 +1,166 @@
+---
+title: "01. Host Platform, OS & Remote Access"
+description: Complete guide for setting up hardware, Ubuntu Server, SSH security, and Wake-on-LAN.
+sidebar:
+  order: 2
+---
+
+import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+This guide covers setting up your home server hardware, installing Ubuntu Server, configuring secure passwordless SSH access, and enabling Wake-on-LAN for remote power management.
+
+---
+
+## 💻 Hardware & OS Installation
+
+When repurposing desktop hardware as a dedicated server:
+
+- **Storage:** Allocate at least 32GB for `/` (root) and use extra drives for data persistence (`/mnt/data` or `/var/lib/docker`).
+- **Power Management:** Configure the BIOS/UEFI to automatically **Power On after Power Loss**.
+
+### Customizing Ubuntu Server Installation
+
+During the Ubuntu Server installation wizard:
+
+1. Choose **Ubuntu Server (Minimal)** to avoid unnecessary desktop UI packages.
+2. Under **Network**, set a static IP address or bind a DHCP reservation on your router.
+3. Enable **OpenSSH Server** installation.
+4. Skip snap packages unless specifically required.
+
+---
+
+## 🔑 Remote Access & SSH Setup
+
+Configure SSH key-based authentication for fast, secure passwordless logins.
+
+### 1. Generating & Copying SSH Keys
+
+<Tabs>
+  <TabItem label="Linux / macOS">
+    ```bash
+    # Generate SSH key pair
+    ssh-keygen -t ed25519 -C "homeserver-key"
+
+    # Copy key to server
+    ssh-copy-id -i ~/.ssh/id_ed25519.pub user@192.168.1.100
+    ```
+
+  </TabItem>
+  <TabItem label="Windows (PowerShell)">
+    ```powershell
+    # Generate SSH key pair
+    ssh-keygen -t ed25519 -C "homeserver-key"
+
+    # Copy key to server
+    cat ~/.ssh/id_ed25519.pub | ssh user@192.168.1.100 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+    ```
+
+  </TabItem>
+</Tabs>
+
+### 2. Client SSH Config (`~/.ssh/config`)
+
+Simplify remote access by creating an SSH alias on your client machine:
+
+```text
+Host homeserver
+    HostName 192.168.1.100
+    User adminuser
+    IdentityFile ~/.ssh/id_ed25519
+    Port 22
+```
+
+Now you can log in directly with:
+
+```bash
+ssh homeserver
+```
+
+### 3. File Transfer over SSH
+
+<Tabs>
+  <TabItem label="rsync (Recommended)">
+    ```bash # Sync local directory to server rsync -avzP --exclude 'node_modules' ./my-app/
+    homeserver:/opt/apps/my-app/ ```
+  </TabItem>
+  <TabItem label="scp">
+    ```bash # Copy single file or tar archive scp ./deploy-bundle.tar.gz homeserver:/tmp/ ```
+  </TabItem>
+</Tabs>
+
+---
+
+## ⚡ Wake-on-LAN (WoL) Setup
+
+Wake-on-LAN allows you to remotely power on your server over the local network using a Magic Packet.
+
+<Steps>
+
+1. **Enable WoL in BIOS/UEFI:**
+   Enable options like `Power On by PCI-E/LAN` or `Wake-on-LAN`.
+
+2. **Enable WoL in Ubuntu (`ethtool`):**
+
+   Check network interface name:
+
+   ```bash
+   ip link show
+   ```
+
+   Install `ethtool` and verify WoL support (`g` means Wake on Magic Packet):
+
+   ```bash
+   sudo apt update && sudo apt install -y ethtool
+   sudo ethtool enp3s0 | grep "Wake-on"
+   # Supports Wake-on: pumbg
+   # Wake-on: g
+   ```
+
+3. **Make WoL Persistent across Reboots:**
+
+   Create a systemd service at `/etc/systemd/system/wol.service`:
+
+   ```ini
+   [Unit]
+   Description=Enable Wake-on-LAN
+   After=network.target
+
+   [Service]
+   Type=oneshot
+   ExecStart=/sbin/ethtool -s enp3s0 wol g
+
+   [Install]
+   WantedBy=basic.target
+   ```
+
+   Enable the service:
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now wol.service
+   ```
+
+4. **Send Magic Packet from Client:**
+
+   <Tabs>
+     <TabItem label="Linux / macOS">
+       ```bash wakeonlan AA:BB:CC:DD:EE:FF # or using etherwake sudo etherwake -i eth0
+       AA:BB:CC:DD:EE:FF ```
+     </TabItem>
+     <TabItem label="Windows (PowerShell)">
+       ```powershell # Using wol.exe or PowerShell script Send-WOL -MacAddress "AA:BB:CC:DD:EE:FF"
+       ```
+     </TabItem>
+   </Tabs>
+
+</Steps>
+
+---
+
+## ➡️ Next Step Choices
+
+Select your runtime environment:
+
+- [Path A: Fast Node Manager (`fnm`) & Node.js →](/home-server/02-runtimes#option-a-nodejs-via-fnm)
+- [Path B: Python Virtual Environments →](/home-server/02-runtimes#option-b-python-environments)
+- [Path C: Full Global Stack →](/home-server/02-runtimes#option-c-global-system-stack)
