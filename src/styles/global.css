@@ -5,6 +5,26 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 
 @theme {
+  /* If set, the following CSS custom properties will override Starlight’s default styles: */
+  --font-sans: "Chakra Petch";
+  --font-mono: "UnifontEX";
+
+  /* Generated accent color palettes. */
+  --color-accent-200: #ffff23;
+  --color-accent-600: #ac9200;
+  --color-accent-900: #3b2100;
+  --color-accent-950: #2b1100;
+
+  /* Generated gray color palettes. */
+  --color-gray-100: #f5f6fa;
+  --color-gray-200: #eaedf6;
+  --color-gray-300: #bec2cc;
+  --color-gray-400: #848b9e;
+  --color-gray-500: #515869;
+  --color-gray-700: #323848;
+  --color-gray-800: #212636;
+  --color-gray-900: #15181f;
+
   /*
 	Configure your Tailwind theme that will be used by Starlight.
 	https://starlight.astro.build/guides/css-and-tailwind/#styling-starlight-with-tailwind
@@ -15,3 +35,26 @@
 Add additional Tailwind styles to this file:
 https://tailwindcss.com/docs/adding-custom-styles#using-custom-css
 */
+
+/* chakra-petch-latin-400-normal */
+@font-face {
+  font-family: "Chakra Petch";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(https://cdn.jsdelivr.net/fontsource/fonts/chakra-petch@5.3.0/latin-400-normal.woff2)
+    format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* unifontex-latin-400-normal */
+@font-face {
+  font-family: "UnifontEX";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(https://cdn.jsdelivr.net/fontsource/fonts/unifontex@5.3.0/latin-400-normal.woff2)
+    format("woff2");
+}
