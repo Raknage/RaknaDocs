@@ -6,11 +6,12 @@ import { defineConfig } from "astro/config";
 // https://astro.build/config
 export default defineConfig({
   vite: {
-    plugins: [/** @type {any} */ (tailwindcss())],
+    plugins: [tailwindcss()],
   },
   integrations: [
     starlight({
       title: "My Docs",
+      customCss: ["./src/styles/global.css"],
       social: [
         {
           icon: "github",

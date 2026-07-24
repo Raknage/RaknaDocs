@@ -50,6 +50,7 @@ All commands are run from the root of the project, from a terminal:
 | `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
 | `pnpm astro -- --help` | Get help using the Astro CLI                     |
 | `pnpm format`          | For consistent formatting of all files           |
+| `pnpm check`           | Astro and vp check, format + lint + type-check   |
 
 ## 👀 Want to learn more?
 
@@ -57,9 +58,9 @@ Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro 
 
 ## Vite+
 
-I want to use Vite+ in my project. Vite+ is the unified toolchain for the web behind the `vp` CLI — one tool combining Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task, plus runtime and package-manager management.
+Use Vite+ in my project. Vite+ is the unified toolchain for the web behind the `vp` CLI — one tool combining Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task, plus runtime and package-manager management.
 
-First, read https://viteplus.dev/llms-full.txt to learn Vite+'s commands and configuration.
+Read https://viteplus.dev/llms-full.txt to learn Vite+'s commands and configuration.
 
 Install the `vp` CLI:
 
@@ -68,21 +69,15 @@ Install the `vp` CLI:
 
 Then open a new terminal and run `vp help`. To scaffold a new project run `vp create`; to move an existing Vite project onto Vite+ run `vp migrate`.
 
-Day-to-day commands: `vp install` (dependencies), `vp dev` (dev server), `vp check` (format + lint + type-check), `vp test` (tests), and `vp build` (production build).
-
-Help me get set up and explain anything I should know.
+Day-to-day commands: `vp install` (dependencies), `vp check` (format + lint + type-check), `vp test` (tests).
 
 ## Setup steps
 
 ```bash
-pnpm create astro@latest raknaDocs -- --template starlight
+pnpm create astro@latest raknaDocs -- --template starlight/tailwind
 cd raknaDocs
 git init
-pnpm astro add tailwind
 vp migrate
-# vp upgrade
-pnpm astro add tailwind -y # pnpm add tailwindcss @tailwindcss/vite
-# Remember to `import '../styles/global.css'` in your Layout.astro
 pn add -D prettier prettier-plugin-astro prettier-plugin-tailwindcss
 pn add -D typescript@6
 pn astro check -y
