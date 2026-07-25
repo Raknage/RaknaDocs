@@ -4,6 +4,7 @@
   "editor.tabSize": 2,
   "editor.insertSpaces": true,
   "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.colorDecorators": true,
   "editor.codeActionsOnSave": {
     "source.fixAll.oxc": "explicit"
   },

@@ -1,0 +1,122 @@
+---
+title: "04. Data Layer & Persistence"
+description: Database architecture strategies comparing bare-metal installations vs containerized Docker volumes.
+sidebar:
+  order: 5
+---
+
+import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+This guide outlines your database architecture choices: running database engines directly on host bare-metal versus running them in containerized Docker volumes.
+
+---
+
+## 🗄 Choose Your Database Architecture
+
+<Tabs>
+  <TabItem label="Option A: Bare-Metal Database">
+
+    ### Running PostgreSQL / MySQL Directly on Host OS
+
+    Best for max performance, low container overhead, and serving multiple applications (both bare-metal and containerized) from a centralized local database server.
+
+    #### 1. PostgreSQL Bare-Metal Installation
+
+    ```bash
+    # Install PostgreSQL
+    sudo apt update && sudo apt install -y postgresql postgresql-contrib
+
+    # Start and enable service
+    sudo systemctl enable --now postgresql
+
+    # Create database user & database
+    sudo -u postgres psql -c "CREATE USER appuser WITH PASSWORD 'securepassword';"
+    sudo -u postgres psql -c "CREATE DATABASE appdb OWNER appuser;"
+    ```
+
+    #### 2. Configuring Host Network Listening
+
+    By default, PostgreSQL listens only on `localhost` (`127.0.0.1`). To allow local Docker containers or LAN apps to connect:
+
+    Edit `/etc/postgresql/16/main/postgresql.conf`:
+    ```text
+    listen_addresses = 'localhost, 172.17.0.1, 192.168.1.100'
+    ```
+
+    Edit `/etc/postgresql/16/main/pg_hba.conf`:
+    ```text
+    # Allow local Docker containers (docker0 subnet)
+    host    appdb           appuser         172.17.0.0/16           scram-sha-256
+    ```
+
+    Reload PostgreSQL:
+    ```bash
+    sudo systemctl reload postgresql
+    ```
+
+  </TabItem>
+  <TabItem label="Option B: Containerized Database">
+
+    ### Running Databases in Docker Volumes
+
+    Best for isolated per-application stacks (e.g., WordPress + MySQL), easy destruction/recreation, and zero host system package dependencies.
+
+    #### Docker Compose Database Stack (`docker-compose.db.yml`)
+
+    ```yaml
+    version: '3.8'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        container_name: postgres_db
+        restart: always
+        environment:
+          POSTGRES_DB: appdb
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: securepassword
+        ports:
+          - "5432:5432"
+        volumes:
+          - pgdata:/var/lib/postgresql/data
+        networks:
+          - backend
+
+    volumes:
+      pgdata:
+        driver: local
+
+    networks:
+      backend:
+        driver: bridge
+    ```
+
+  </TabItem>
+</Tabs>
+
+---
+
+## 💾 Storage Mounting & Persistent Disks
+
+When mounting external hard drives or secondary SSDs for databases or Docker storage:
+
+```bash
+# Identify disk UUID
+sudo blkid /dev/sdb1
+
+# Create mount directory
+sudo mkdir -p /mnt/storage
+
+# Add entry to /etc/fstab for auto-mounting on boot
+# UUID=xxxx-xxxx-xxxx  /mnt/storage  ext4  defaults,noatime  0  2
+```
+
+---
+
+## ➡️ Next Step Choices
+
+Select your overall application deployment model:
+
+- [Path A: Bare-Metal Systemd Deployments →](/home-server/05-deployment-strategies#branch-a-bare-metal-systemd-deployment)
+- [Path B: Fully Containerized Docker Compose Stacks →](/home-server/05-deployment-strategies#branch-b-fully-containerized-docker-deployment)
+- [Path C: Hybrid Architecture (Bare-Metal DB + Container Apps) →](/home-server/05-deployment-strategies#branch-c-hybrid-architecture)

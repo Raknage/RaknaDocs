@@ -1,0 +1,438 @@
+---
+title: Daily Git Cheat Sheet & Reference
+description: Quick reference tables with interactive filters and in-depth guides for everyday Git commands, branching, stashing, syncing, and undoing mistakes.
+---
+
+import { Tabs, TabItem, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import QuickReferenceTable from "../../../components/QuickReferenceTable.astro";
+
+A practical reference for everyday Git development. Use the **Interactive Quick Reference** to search and filter commands, or explore the **In-Depth Guide** sub-sections below for detailed syntax, flags, and workflow examples.
+
+---
+
+## ⚡ Interactive Quick Reference
+
+<QuickReferenceTable />
+
+---
+
+## 📖 In-Depth Command Guide
+
+### 🔄 Everyday Development Cycle
+
+<Tabs>
+  <TabItem label="🚀 Setup & Clone">
+    #### Repository Setup & Global Config
+
+    ##### Initializing & Cloning
+    ```bash
+    # Clone a remote repository into a local folder
+    git clone https://github.com/user/repo.git
+
+    # Clone into a specific target directory
+    git clone https://github.com/user/repo.git my-folder-name
+
+    # Initialize a new local Git repo in the current directory
+    git init
+    ```
+
+    ##### User Identity Configuration
+    ```bash
+    # Global setup (applies to all repos on machine)
+    git config --global user.name "John Doe"
+    git config --global user.email "john@example.com"
+
+    # Local repo setup (overrides global config for this repo)
+    git config --local user.name "Project Name"
+    git config --local user.email "project@company.com"
+
+    # View all current git configuration options
+    git config --list
+    ```
+
+    :::tip[Default Branch Name]
+    Set your default branch name for newly initialized repositories to `main`:
+    ```bash
+    git config --global init.defaultBranch main
+    ```
+    :::
+
+  </TabItem>
+
+  <TabItem label="🌿 Branching">
+    #### Managing Branches
+
+    Modern Git uses `git switch` for branch operations (replacing overloaded `git checkout` commands).
+
+    ##### Branch Creation & Navigation
+    ```bash
+    # Create and switch to a new feature branch
+    git switch -c feature/user-authentication
+
+    # Switch to an existing local branch
+    git switch feature/user-authentication
+
+    # Toggle back to the previous branch you were on
+    git switch -
+    ```
+
+    ##### Branch Management
+    ```bash
+    # List all local branches (current branch marked with *)
+    git branch
+
+    # List both local and remote tracking branches
+    git branch -a
+
+    # Rename current branch
+    git branch -m new-branch-name
+
+    # Safe delete local branch (fails if unmerged changes exist)
+    git branch -d feature/old-feature
+
+    # Force delete local branch (discards unmerged commits!)
+    git branch -D feature/scratch-idea
+    ```
+
+  </TabItem>
+
+  <TabItem label="📝 Committing">
+    #### Working Directory & Staging Area
+
+    ##### Checking Status & Diffing
+    ```bash
+    # Check modified, staged, and untracked files
+    git status
+
+    # View unstaged changes in working directory
+    git diff
+
+    # View changes that are staged for commit
+    git diff --staged
+    ```
+
+    ##### Staging Files
+    ```bash
+    # Stage a single file
+    git add src/index.ts
+
+    # Stage all modifications and new files in the workspace
+    git add .
+
+    # Interactive patch mode: review and stage changes hunk by hunk
+    git add -p
+    ```
+
+    ##### Committing
+    ```bash
+    # Single-line commit message
+    git commit -m "feat(auth): add JWT token validation"
+
+    # Commit with detailed title and body
+    git commit -m "fix(db): correct database connection timeout" -m "Increases connection pool idle timeout from 5s to 30s."
+
+    # Stage all modified tracked files and commit in one command
+    git commit -am "fix: quick typo fix in docs"
+
+    # Amend last commit (add newly staged files or fix commit message)
+    git commit --amend --no-edit
+    ```
+
+  </TabItem>
+
+  <TabItem label="☁️ Syncing">
+    #### Remote Repository Synchronization
+
+    ##### Managing Remotes
+    ```bash
+    # List configured remotes and their fetch/push URLs
+    git remote -v
+
+    # Add a new remote repository connection
+    git remote add origin https://github.com/user/repo.git
+    ```
+
+    ##### Fetching & Pulling
+    ```bash
+    # Fetch remote references without modifying working directory
+    git fetch origin
+
+    # Pull changes from remote branch and rebase local commits on top
+    git pull --rebase origin main
+    ```
+
+    :::tip[Why Pull with Rebase?]
+    Using `git pull --rebase` keeps your branch commit history linear by replaying your local unpushed commits on top of incoming remote commits, avoiding unnecessary merge commits.
+    :::
+
+    ##### Pushing Changes
+    ```bash
+    # Push local branch to remote and set tracking upstream
+    git push -u origin feature/login
+
+    # Push subsequent commits on tracked branch
+    git push
+    ```
+
+    :::caution[Safe Force Pushing]
+    If you rebased or amended commits on a remote branch, use `--force-with-lease` instead of `--force`. It verifies no one else pushed new commits before overwriting:
+    ```bash
+    git push --force-with-lease
+    ```
+    :::
+
+  </TabItem>
+</Tabs>
+
+---
+
+### 🛠️ Advanced Operations & Maintenance
+
+<Tabs>
+  <TabItem label="🔀 Merge & Rebase">
+    #### Step-by-Step Integration Guide: Choosing a History Strategy
+
+    When merging a feature branch into your primary branch (e.g. `main`), select a strategy based on whether you want to **preserve detailed commit history** or maintain a **clean linear history**.
+
+    <Tabs>
+      <TabItem label="📜 Preserve History (Explicit Merge)">
+        ##### Strategy: Keep Full Feature Branch & Author History
+
+        **Best for:** Major feature branches, collaborative team branches, or when preserving individual commit context and timestamp history is important.
+
+        <Steps>
+        1. **Ensure your local `main` is up to date:**
+           ```bash
+           git switch main
+           git pull --rebase origin main
+           ```
+
+        2. **Merge feature branch with an explicit merge commit:**
+           ```bash
+           # --no-ff forces a merge commit even if fast-forward is possible
+           git merge --no-ff feature/user-auth -m "merge: integrate user authentication feature"
+           ```
+
+        3. **Push updated main branch to remote:**
+           ```bash
+           git push origin main
+           ```
+
+        4. **Delete merged local feature branch:**
+           ```bash
+           git branch -d feature/user-auth
+           ```
+        </Steps>
+
+        :::tip[Result]
+        Preserves the full branch graph showing exactly when the branch started, each individual commit, and when it merged into `main`.
+        :::
+      </TabItem>
+
+      <TabItem label="⚡ Clean Linear History (Rebase + Fast-Forward)">
+        ##### Strategy: Replay Commits for a 100% Straight-Line History
+
+        **Best for:** Clean repository logs, individual feature work, or team rules requiring 0 merge commit noise.
+
+        <Steps>
+        1. **Switch to your feature branch & rebase onto updated main:**
+           ```bash
+           git switch feature/user-auth
+           git fetch origin
+           git rebase origin/main
+           ```
+
+        2. **Switch to `main` and execute a Fast-Forward merge:**
+           ```bash
+           git switch main
+           git merge feature/user-auth
+           ```
+           *(Git moves the `main` pointer directly to the tip of your feature branch with zero merge commits created).*
+
+        3. **Push to remote & clean up local branch:**
+           ```bash
+           git push origin main
+           git branch -d feature/user-auth
+           ```
+        </Steps>
+
+        :::tip[Result]
+        Produces a completely linear `git log --graph` history as if all feature commits were written directly on `main`.
+        :::
+      </TabItem>
+
+      <TabItem label="🧹 Single-Commit Summary (Squash Merge)">
+        ##### Strategy: Collapse All WIP Commits into 1 Clean Commit
+
+        **Best for:** Cleaning up messy local commits (e.g., "fix typo", "temp checkpoint") into a single, polished commit before merging into `main`.
+
+        <Steps>
+        1. **Switch to `main` and squash-merge the feature branch:**
+           ```bash
+           git switch main
+           git pull origin main
+           git merge --squash feature/user-auth
+           ```
+
+        2. **Commit the combined staged changes with a clean message:**
+           ```bash
+           git commit -m "feat(auth): add OAuth2 and JWT user authentication system"
+           ```
+
+        3. **Push to remote & delete feature branch:**
+           ```bash
+           git push origin main
+           git branch -d feature/user-auth
+           ```
+        </Steps>
+
+        :::tip[Result]
+        Combines 20 micro-commits into a single pristine commit on `main`, keeping history concise.
+        :::
+      </TabItem>
+    </Tabs>
+
+    ---
+
+    #### Interactive Rebasing & Conflict Resolution
+
+    ##### Interactive Rebase (Cleanup Before Merging)
+    ```bash
+    # Interactively edit, squash, reword, or drop the last 4 commits
+    git rebase -i HEAD~4
+    ```
+
+    ##### Conflict Resolution Workflow
+    When a merge or rebase encounters conflicts:
+    ```bash
+    # 1. Check conflicting files
+    git status
+
+    # 2. Open conflicting files, resolve <<<< / >>>> markers, then stage
+    git add path/to/resolved-file.ts
+
+    # 3. Continue the rebase or merge
+    git rebase --continue
+    # OR
+    git merge --continue
+
+    # Abort the operation and return to original state if needed
+    git rebase --abort
+    git merge --abort
+    ```
+
+  </TabItem>
+
+  <TabItem label="📦 Stashing">
+    #### Temporary Work Storage
+
+    Use stashing to set aside unfinished work when you need to switch contexts or pull clean updates.
+
+    ```bash
+    # Save uncommitted changes to stash with a descriptive label
+    git stash push -m "WIP: implementation of header menu"
+
+    # Save changes including untracked files
+    git stash push -u -m "WIP: includes new un-tracked icon asset"
+
+    # List all saved stashes
+    git stash list
+
+    # Re-apply the most recent stash (stash@{0}) and remove it from stash list
+    git stash pop
+
+    # Apply a stash without removing it from stash list
+    git stash apply stash@{1}
+
+    # Inspect contents of a specific stash
+    git stash show -p stash@{0}
+
+    # Delete a specific stash
+    git stash drop stash@{0}
+
+    # Clear all stashes
+    git stash clear
+    ```
+
+  </TabItem>
+
+  <TabItem label="⏪ Undo & Recover">
+    #### Fixing Mistakes & Undoing Changes
+
+    ##### Restoring Files
+    ```bash
+    # Discard unstaged modifications in a file (reverts to HEAD state)
+    git restore path/to/file.ts
+
+    # Unstage a file (moves changes from staged back to working directory)
+    git restore --staged path/to/file.ts
+
+    # Restore a file from a specific commit in history
+    git restore --source=HEAD~2 path/to/file.ts
+    ```
+
+    ##### Resetting Commits
+    ```bash
+    # Soft reset: undoes commit, keeps changes staged in index
+    git reset --soft HEAD~1
+
+    # Mixed reset (default): undoes commit and unstages changes, keeps files in working directory
+    git reset HEAD~1
+    ```
+
+    :::danger[Hard Reset Warning]
+    `git reset --hard` permanently discards all uncommitted working directory changes and removes commits back to the target commit:
+    ```bash
+    # Permanently discard uncommitted work and reset to HEAD~1
+    git reset --hard HEAD~1
+    ```
+    :::
+
+    ##### Reverting Commits
+    ```bash
+    # Create a new commit that safely reverses changes from a previous commit
+    git revert <commit-hash>
+    ```
+
+    :::tip[Emergency Recovery with Reflog]
+    If you accidentally hard reset or lost commits, use `git reflog` to view Git's local reference log history and recover lost commit SHA hashes:
+    ```bash
+    # Find the commit hash before the reset
+    git reflog
+
+    # Restore HEAD to that lost commit state
+    git reset --hard HEAD@{1}
+    ```
+    :::
+
+  </TabItem>
+
+  <TabItem label="🔍 Logs & History">
+    #### Exploring Logs & History
+
+    ##### Inspecting Commit Logs
+    ```bash
+    # Concise 1-line log view with branch decorations and visual graph
+    git log --oneline --graph --decorate --all
+
+    # View last N commits with diff summary
+    git log -n 5 --stat
+
+    # Search commit history for commits modifying a specific function or string
+    git log -S "fetchUserData"
+    ```
+
+    ##### Detailed File Inspection
+    ```bash
+    # Show full details and diff of a specific commit
+    git show <commit-hash>
+
+    # View line-by-line author attribution and last commit for a file
+    git blame path/to/file.ts
+
+    # View line-by-line attribution for specific lines 10 to 30
+    git blame -L 10,30 path/to/file.ts
+    ```
+
+  </TabItem>
+</Tabs>

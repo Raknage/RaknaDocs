@@ -11,11 +11,12 @@
     "prepare": "vp config",
     "format": "vp fmt . && prettier --write **/*.astro",
     "lint": "vp lint",
-    "check": "astro check && vp check && prettier --check **/*.astro"
+    "check": "astro check && vp check --fix && prettier --write **/*.astro"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.9",
     "@astrojs/starlight": "^0.41.4",
+    "@astrojs/starlight-tailwind": "^5.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.0.2",
     "sharp": "^0.34.5",

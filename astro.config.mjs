@@ -5,20 +5,36 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
+  site: "https://docs.raknage.com",
   vite: {
-    plugins: [/** @type {any} */ (tailwindcss())],
+    plugins: [tailwindcss()],
   },
   integrations: [
     starlight({
-      title: "My Docs",
+      title: "RaknaDocs",
+      customCss: ["./src/styles/global.css"],
       social: [
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/withastro/starlight",
+          href: "https://github.com/raknage",
+        },
+        {
+          icon: "twitch",
+          label: "Twitch",
+          href: "https://twitch.tv/raknage",
+        },
+        {
+          icon: "instagram",
+          label: "Instagram",
+          href: "https://instagram.com/raknage",
         },
       ],
       sidebar: [
+        {
+          label: "Home Server",
+          items: [{ autogenerate: { directory: "home-server" } }],
+        },
         {
           label: "Guides",
           items: [
