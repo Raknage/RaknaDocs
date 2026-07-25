@@ -83,3 +83,31 @@ pn add -D typescript@6
 pn astro check -y
 pn dev
 ```
+
+## git workflow
+
+```mermaid
+graph LR;
+  feature --> dev;
+  dev --> main;
+```
+
+```bash
+
+# Develop new feature/branch
+git switch -c feature
+git commit -m "feat: feature"
+
+# Merge new branch to dev first
+git switch dev
+git merge --no-ff feature -m "merge: feature branch"
+git push -u origin dev
+
+# Merge dev to main or do a pull request
+git switch main
+git merge dev
+git push origin main
+
+# Optionally delete the feature branch
+# git branch -d feature
+```
