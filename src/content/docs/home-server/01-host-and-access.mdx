@@ -161,7 +161,7 @@ network:
     enp2s0:
       dhcp4: no
       addresses:
-        - 192.168.1.150/24
+        - 192.168.1.xxx/24
       routes:
         - to: default
           via: 192.168.1.1
@@ -184,16 +184,20 @@ sudo netplan apply
 
 Password-based SSH authentication is vulnerable to brute-force attacks. Secure remote access with `ed25519` SSH key pairs.
 
+<Aside type="tip" icon="open-book">
+  More detailed info in [SSH reference](/reference/ssh)
+</Aside>
+
 #### Step A: Generate & Transfer SSH Key from Client Machine
 
 On your client machine (laptop/desktop):
 
 ```bash
 # Generate key pair
-ssh-keygen -t ed25519 -C "admin@homeserver"
+ssh-keygen -t ed25519 -C "admin@homeserver.com"
 
 # Copy key to remote server
-ssh-copy-id toni@192.168.1.150
+ssh-copy-id toni@192.168.1.xxx
 ```
 
 #### Step B: Disable Password Authentication & Root Login
@@ -219,10 +223,10 @@ Transfer files securely between your workstation and home server:
 
 ```bash
 # Local to Remote using scp
-scp -r ./my-app toni@192.168.1.150:/home/toni/
+scp -r ./my-app toni@192.168.1.xxx:/home/toni/
 
 # Remote log sync using rsync
-rsync -avz toni@192.168.1.150:/var/log/syslog ./server-syslog.log
+rsync -avz toni@192.168.1.xxx:/var/log/syslog ./server-syslog.log
 ```
 
 ---
@@ -256,16 +260,23 @@ wakeonlan xx:xx:xx:xx:xx:xx
 
 ---
 
-### 4. Firewall (UFW) & Optional Remote Management
+### 4. Firewall (UFW) Configuration & Essential Commands
 
-Configure Uncomplicated Firewall (UFW) to enforce default-deny incoming rules:
+Configure Uncomplicated Firewall (UFW) to enforce default-deny incoming rules for network security:
+
+<Aside type="note" title="Why Open Ports 80 (HTTP) & 443 (HTTPS)?">
+  - **Port 80 (HTTP):** Required for initial HTTP web requests, automatic HTTP-to-HTTPS redirects,
+  and automated Let's Encrypt / Caddy ACME HTTP-01 domain validation challenges when issuing SSL
+  certificates. - **Port 443 (HTTPS):** Required for secure, encrypted SSL/TLS web traffic to your
+  reverse proxies (Caddy/Nginx), web apps, and APIs.
+</Aside>
 
 ```bash
-# Set default policies
+# Set default policies (block incoming, allow outgoing)
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 
-# Allow SSH and standard web traffic
+# Allow essential service ports
 sudo ufw allow 22/tcp comment 'SSH'
 sudo ufw allow 80/tcp comment 'HTTP'
 sudo ufw allow 443/tcp comment 'HTTPS'
@@ -273,6 +284,21 @@ sudo ufw allow 443/tcp comment 'HTTPS'
 # Enable firewall
 sudo ufw enable
 ```
+
+#### 🛠️ Essential UFW Command Reference
+
+| Action / Purpose              | Command                                             | Notes                                                    |
+| :---------------------------- | :-------------------------------------------------- | :------------------------------------------------------- |
+| **Check Status & Rules**      | `sudo ufw status verbose`                           | Shows active status and enabled port rules               |
+| **Numbered Rule List**        | `sudo ufw status numbered`                          | Displays rule index numbers needed for deletion          |
+| **Delete Rule by Number**     | `sudo ufw delete 3`                                 | Deletes rule #3 from the numbered list                   |
+| **Delete Rule by Service**    | `sudo ufw delete allow 80/tcp`                      | Deletes specific port rule                               |
+| **Restrict SSH to Local LAN** | `sudo ufw allow from 192.168.1.0/24 to any port 22` | Restricts SSH access strictly to internal LAN subnet     |
+| **Allow Custom App Port**     | `sudo ufw allow 3000/tcp comment 'Astro App'`       | Opens port 3000 with a descriptive label                 |
+| **Reload Firewall**           | `sudo ufw reload`                                   | Re-applies rule changes without dropping active sessions |
+| **Reset Firewall**            | `sudo ufw reset`                                    | Disables UFW and clears all custom rules to defaults     |
+
+---
 
 #### Optional: Web-Based Management (Cockpit)
 
@@ -284,4 +310,4 @@ sudo systemctl enable --now cockpit.socket
 sudo ufw allow 9090/tcp comment 'Cockpit Web Dashboard'
 ```
 
-Access Cockpit at `https://192.168.1.150:9090`.
+Access Cockpit at `https://192.168.1.xxx:9090`.
