@@ -89,18 +89,15 @@ Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash t
 </Aside>
 
 <Aside type="note" title="Swap Partition vs Swap File">
-  <p>
-    <Badge text="Recommendation" variant="success" /> Do <strong>NOT</strong> create a dedicated
-    swap partition during installation.
-  </p>
-  Modern Ubuntu Server automatically provisions a dynamic <strong>swap file</strong> (
-  <code>/swap.img</code>) on your main SSD partition. Using a swap file keeps partitioning simple
-  and allows you to resize swap later (e.g. <code>fallocate -l 4G /swapfile</code>) without needing
-  disk repartitioning.
+  <Badge text="Recommendation" variant="success" /> Do <strong>NOT</strong> create a dedicated swap
+  partition during installation. Modern Ubuntu Server automatically provisions a dynamic{" "}
+  <strong>swap file</strong> (<code>/swap.img</code>) on your main SSD partition. Using a swap file
+  keeps partitioning simple and allows you to resize swap later (e.g.{" "}
+  <code>fallocate -l 4G /swapfile</code>) without needing disk repartitioning.
 </Aside>
 
 <Aside type="caution" title="Understanding Ubuntu Default LVM & The 100GB Root Limit">
-  <p><Badge text="Gotcha" variant="danger" /> By default, Ubuntu Server installer caps root (<code>/</code>) at <strong>100 GB</strong> regardless of SSD size!</p>
+  <Badge text="Gotcha" variant="danger" /> By default, Ubuntu Server installer caps root (<code>/</code>) at <strong>100 GB</strong> regardless of SSD size!
 
 When installing Ubuntu Server on a 240 GB SSD, the installer creates 3 default partitions:
 
@@ -108,18 +105,27 @@ When installing Ubuntu Server on a 240 GB SSD, the installer creates 3 default p
 - `/boot` (2 GB): Stores Linux kernels (`vmlinuz`) and boot system files.
 - `ubuntu-vg/ubuntu-lv` mounted at `/` (100 GB): Logical Volume for your OS & files.
 
-**Why is root capped at 100 GB?** Ubuntu leaves the remaining ~137 GB unallocated in the LVM Volume Group (`ubuntu-vg`) as a safety buffer for LVM snapshots or volume expansion.
+**Why leaves unallocated space?** Ubuntu leaves ~137 GB free in `ubuntu-vg` for advanced users who want LVM snapshots before OS upgrades or separate logical volumes.
+
+**Recommendation for a 240 GB Home Server:**
+
+<Badge text="Recommended" variant="success" /> **Expand to 100% (max)!** 240 GB is a modest drive
+size. Docker layer caches, databases, and logs will quickly fill a 100 GB limit. Expand to `max` so
+all space is available under root `/`. **Only keep unallocated space if:** You specifically plan to
+use LVM instant snapshots (`sudo lvcreate --snapshot`) before risky kernel/OS upgrades.
 
 **How to expand root to use full 240 GB SSD space:**
 
-- **During Install:** On the guided storage screen, select `ubuntu-lv`, edit size, and change to `max` or `100%`.
-- **Post-Install (Single Command):** If you already installed with 100 GB default, run this in terminal to instantly expand root to full disk size without rebooting:
-  `bash
-  # Expand LVM logical volume and resize ext4 filesystem to 100% free space
-  sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
-  sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
-  `
-  </Aside>
+**During Install:** On the guided storage screen, select `ubuntu-lv`, edit size, and change to `max` or `100%`.
+**Post-Install (Single Command):** If you already installed with 100 GB default, run this in terminal to instantly expand root to full disk size without rebooting:
+
+```bash
+# Expand LVM logical volume and resize ext4 filesystem to 100% free space
+sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
+sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
+```
+
+</Aside>
 
 <Steps>
 
