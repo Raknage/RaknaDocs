@@ -1,177 +1,151 @@
 ---
-title: "05. Application Deployment Strategies"
-description: Complete deployment guides for Bare-Metal Systemd, Fully Containerized Docker Compose, and Hybrid stacks.
+title: "05. Deployment Strategies & Orchestration"
+description: Multi-container Docker Compose stacks, bare-metal Systemd service units, and hybrid deployment models.
 sidebar:
   order: 6
 ---
 
-import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-This guide presents the three primary deployment branches for running your application workloads on your home server.
+> [!NOTE]  
+> **Layer Contract Card**  
+> 📥 **Requires:** Application code or built artifact, runtime environment (Layer 3), and optional database (Layer 4).  
+> 📤 **Provides:** Long-running application process management, automatic restart policies, and reverse proxy network integration.
 
 ---
 
-## 🚀 Choose Your Deployment Model
+## 🌟 Recommended Default Track: Docker Compose Multi-Container Stacks
 
-<Tabs>
-  <TabItem label="Branch A: Bare-Metal Systemd">
+Docker Compose orchestrates multi-container web stacks (such as Astro frontend + Node API + MariaDB) with isolated networking and restart policies.
 
-    ### Running Applications Directly on Host OS
+### 1. Multi-Container Stack (`docker-compose.yml`)
 
-    Run Node.js or Python applications natively on the host OS using Systemd user or system services.
+Create a `docker-compose.yml` in your project root:
 
-    #### Systemd Service Unit (`/etc/systemd/system/myapp.service`)
+```yaml
+version: "3.8"
 
-    ```ini
-    [Unit]
-    Description=Bare-Metal Application Service
-    After=network.target postgresql.service
-
-    [Service]
-    Type=simple
-    User=adminuser
-    WorkingDirectory=/opt/apps/myapp
-    EnvironmentFile=/opt/apps/myapp/.env
-    ExecStart=/home/adminuser/.local/share/fnm/current/bin/node dist/main.js
-    Restart=always
-    RestartSec=3
-
-    [Install]
-    WantedBy=multi-user.target
-    ```
-
-    Management commands:
-    ```bash
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now myapp
-    sudo journalctl -u myapp -f -n 100
-    ```
-
-  </TabItem>
-  <TabItem label="Branch B: Fully Containerized Docker">
-
-    ### Multi-Container Stacks with Docker Compose
-
-    Deploy applications inside isolated Docker containers with declarative `docker-compose.yml` configurations.
-
-    #### Multi-Service Stack Example (Headless WordPress + Node API)
-
-    ```yaml
-    version: '3.8'
-
-    services:
-      wordpress:
-        image: wordpress:6-php8.2-fpm-alpine
-        container_name: wp_backend
-        restart: always
-        environment:
-          WORDPRESS_DB_HOST: db:3306
-          WORDPRESS_DB_NAME: wordpress
-          WORDPRESS_DB_USER: wpuser
-          WORDPRESS_DB_PASSWORD_FILE: /run/secrets/db_password
-        volumes:
-          - wp_data:/var/www/html
-        secrets:
-          - db_password
-        networks:
-          - app_net
-
-      db:
-        image: mariadb:10.11
-        container_name: wp_db
-        restart: always
-        environment:
-          MYSQL_DATABASE: wordpress
-          MYSQL_USER: wpuser
-          MYSQL_PASSWORD_FILE: /run/secrets/db_password
-          MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root_password
-        volumes:
-          - db_data:/var/lib/mysql
-        secrets:
-          - db_password
-          - root_password
-        networks:
-          - app_net
-
-      web_frontend:
-        build:
-          context: ./frontend
-          dockerfile: Dockerfile
-        container_name: app_frontend
-        restart: always
-        ports:
-          - "3000:3000"
-        environment:
-          - NODE_ENV=production
-          - API_URL=http://wordpress:80
-        networks:
-          - app_net
-
-    volumes:
-      wp_data:
-      db_data:
-
-    secrets:
-      db_password:
-        file: ./secrets/db_password.txt
-      root_password:
-        file: ./secrets/root_password.txt
-
+services:
+  web:
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://appuser:securepassword@db:5432/appdb
+    depends_on:
+      - db
     networks:
-      app_net:
-        driver: bridge
-    ```
+      - internal
+      - proxy
 
-    Commands:
-    ```bash
-    # Spin up stack in background
-    docker compose up -d --build
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=appuser
+      - POSTGRES_PASSWORD=securepassword
+      - POSTGRES_DB=appdb
+    volumes:
+      - /var/data/postgres:/var/lib/postgresql/data
+    networks:
+      - internal
 
-    # View live logs
-    docker compose logs -f --tail=50
-    ```
+networks:
+  internal:
+  proxy:
+    external: true # Shared Docker network for Caddy reverse proxy
+```
 
-  </TabItem>
-  <TabItem label="Branch C: Hybrid Architecture">
+### 2. Launching & Managing the Stack
 
-    ### Bare-Metal Database + Containerized Web Stacks
+```bash
+# Create shared external network for Caddy reverse proxy
+docker network create proxy
 
-    Run your data layer directly on bare metal for max IOPS performance, while running stateless application containers in Docker.
+# Start stack in detached mode
+docker compose up -d
 
-    ```mermaid
-    graph LR
-        Client[Web Client / User] --> Ingress[Caddy Reverse Proxy]
-        Ingress -->|port 3000| DockerApp[Docker Container: App Frontend]
-        DockerApp -->|host gateway / 172.17.0.1:5432| BareDB[(Bare-Metal PostgreSQL)]
-    ```
+# View running container logs
+docker compose logs -f web
 
-    In `docker-compose.yml`, connect to host DB using `host.docker.internal`:
-
-    ```yaml
-    version: '3.8'
-
-    services:
-      api:
-        build: .
-        ports:
-          - "3000:3000"
-        extra_hosts:
-          - "host.docker.internal:host-gateway"
-        environment:
-          - DATABASE_URL=postgres://appuser:securepassword@host.docker.internal:5432/appdb
-    ```
-
-  </TabItem>
-</Tabs>
+# Stop stack
+docker compose down
+```
 
 ---
 
-## 📋 Summary Matrix of Infrastructure Branches
+## ⚙️ Alternative Branch 1: Bare-Metal Systemd Services
 
-| Layer              | Recommended Choice                           | Primary Alternative         |
-| ------------------ | -------------------------------------------- | --------------------------- |
-| **01. Host OS**    | Ubuntu Server (Minimal)                      | Debian / Proxmox            |
-| **02. Runtime**    | Fast Node Manager (`fnm`)                    | Python (`uv`) / Docker-only |
-| **03. Ingress**    | Cloudflare DNS + Caddy                       | Nginx + Certbot             |
-| **04. Data Layer** | Bare-metal PostgreSQL / Containerized DB     | MySQL / SQLite              |
-| **05. Deployment** | Hybrid (Bare-metal DB + Docker Compose apps) | Pure Systemd / Pure Docker  |
+For applications running directly on the host OS (e.g., Node.js built via `fnm`), use Linux `systemd` user or system service units.
+
+### 1. Create Systemd Service File
+
+Create `/etc/systemd/system/myapp.service`:
+
+```ini
+[Unit]
+Description=My Node.js Application Service
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=toni
+WorkingDirectory=/home/toni/my-app
+ExecStart=/home/toni/.local/share/fnm/current/bin/node /home/toni/my-app/dist/server/entry.mjs
+Restart=always
+RestartSec=5
+
+# Load environment variables
+EnvironmentFile=/home/toni/my-app/.env
+
+# Security Sandbox Options
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2. Enable & Manage Service
+
+```bash
+# Reload systemd manager configuration
+sudo systemctl daemon-reload
+
+# Enable auto-start on boot and start service immediately
+sudo systemctl enable --now myapp.service
+
+# Check service status
+sudo systemctl status myapp.service
+
+# Tail service logs in real time
+sudo journalctl -u myapp.service -f
+```
+
+---
+
+## 🔀 Alternative Branch 2: Hybrid Deployment Model
+
+In a hybrid architecture, application web servers run natively on the host OS via `systemd` (for maximum CPU/disk speed) while databases and caching layers run inside Docker containers.
+
+### Connecting Host Systemd App to Dockerized Postgres
+
+1. Ensure your Docker database maps container port `5432` to host port `5432`:
+
+   ```bash
+   -p 127.0.0.1:5432:5432
+   ```
+
+2. Point your native host application `.env` to `localhost`:
+
+   ```ini
+   DATABASE_URL="postgresql://appuser:securepassword@127.0.0.1:5432/appdb"
+   ```
+
+3. If a containerized app needs to reach a bare-metal host service, use `host.docker.internal`:
+   ```yaml
+   extra_hosts:
+     - "host.docker.internal:host-gateway"
+   ```

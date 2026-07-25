@@ -1,173 +1,204 @@
 ---
-title: "01. Host Platform, OS & Remote Access"
-description: Complete guide for setting up hardware, Ubuntu Server, SSH security, and Wake-on-LAN.
+title: "01. Host Platform, Hardware & Remote Access"
+description: Hardware repurposing, minimal Ubuntu Server installation, SSH key security, Netplan static IP, Wake-on-LAN, and UFW firewall.
 sidebar:
   order: 2
 ---
 
-import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-This guide covers setting up your home server hardware, installing Ubuntu Server, configuring secure passwordless SSH access, and enabling Wake-on-LAN for remote power management.
-
----
-
-## 💻 Hardware & OS Installation
-
-When repurposing desktop hardware as a dedicated server:
-
-- **Storage:** Allocate at least 32GB for `/` (root) and use extra drives for data persistence (`/mnt/data` or `/var/lib/docker`).
-- **Power Management:** Configure the BIOS/UEFI to automatically **Power On after Power Loss**.
-
-### Customizing Ubuntu Server Installation
-
-During the Ubuntu Server installation wizard:
-
-1. Choose **Ubuntu Server (Minimal)** to avoid unnecessary desktop UI packages.
-2. Under **Network**, set a static IP address or bind a DHCP reservation on your router.
-3. Enable **OpenSSH Server** installation.
-4. Skip snap packages unless specifically required.
+> [!NOTE]  
+> **Layer Contract Card**  
+> 📥 **Requires:** Target PC/Laptop hardware, storage drives, ethernet connection, USB installer drive.  
+> 📤 **Provides:** Secured SSH access, static LAN IP address, Wake-on-LAN capability, and hardened UFW firewall.
 
 ---
 
-## 🔑 Remote Access & SSH Setup
+## 🛠️ Part 1: Hardware Repurposing & OS Installation
 
-Configure SSH key-based authentication for fast, secure passwordless logins.
+### 1. Hardware Preparation & BIOS Configuration
 
-### 1. Generating & Copying SSH Keys
+Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to ensure the server remains accessible without human intervention:
 
-<Tabs>
-  <TabItem label="Linux" icon="linux">
-    ```bash
-    # Generate SSH key pair
-    ssh-keygen -t ed25519 -C "homeserver-key"
+- **Restore AC Power Loss:** Set **Restore on AC Power Loss** to `Power On` or `Last State` so the machine automatically reboots after power outages.
+- **Disable C-States / Deep Sleep (Optional):** If repurposing legacy laptop hardware, disable CPU aggressive C-states to prevent sleep states from dropping network connections.
+- **Thermal Maintenance:** Clean dust filters and replace thermal paste on legacy hardware.
 
-    # Copy key to server
-    ssh-copy-id -i ~/.ssh/id_ed25519.pub user@192.168.1.100
-    ```
+### 2. Disk Storage & Partitioning Layout
 
-  </TabItem>
-
-  <TabItem label="Windows (PowerShell)">
-    ```powershell
-    # Generate SSH key pair
-    ssh-keygen -t ed25519 -C "homeserver-key"
-
-    # Copy key to server
-    cat ~/.ssh/id_ed25519.pub | ssh user@192.168.1.100 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
-    ```
-
-  </TabItem>
-</Tabs>
-
-### 2. Client SSH Config (`~/.ssh/config`)
-
-Simplify remote access by creating an SSH alias on your client machine:
-
-```ini
-Host homeserver
-    HostName 192.168.1.100
-    User adminuser
-    IdentityFile ~/.ssh/id_ed25519
-    Port 22
-```
-
-Now you can log in directly with:
+For home servers with multiple drives or dedicated SSD partitions, separate OS system binaries from persistent database and application volumes:
 
 ```bash
-ssh homeserver
+/          →  120 GB SSD  (OS root, system packages, logs)
+/home      →  240 GB SSD  (User projects, repositories, developer assets)
+/var/lib   →  240 GB SSD  (Postgres database clusters, Docker volumes)
 ```
 
-### 3. File Transfer over SSH
+> [!TIP]  
+> **ext4 Tuning:** For dedicated ext4 data drives, reduce default reserved root block percentages from 5% to 1% to reclaim disk space:
+>
+> ```bash
+> sudo tune2fs -m 1 /dev/sdb1
+> ```
 
-<Tabs>
-  <TabItem label="rsync (Recommended)">
-    ```bash
-     # Sync local directory to server rsync -avzP --exclude 'node_modules' ./my-app/
-    homeserver:/opt/apps/my-app/ 
-    ```
-  </TabItem>
+### 3. Ubuntu Server Minimal Installation
 
-  <TabItem label="scp">
-    ```bash
-    # Copy single file or tar archive 
-    scp ./deploy-bundle.tar.gz homeserver:/tmp/ 
-    ```
-  </TabItem>
-</Tabs>
-
----
-
-## ⚡ Wake-on-LAN (WoL) Setup
-
-Wake-on-LAN allows you to remotely power on your server over the local network using a Magic Packet.
+Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash to a USB drive using Rufus or BalenaEtcher.
 
 <Steps>
 
-1. **Enable WoL in BIOS/UEFI:**
-   Enable options like `Power On by PCI-E/LAN` or `Wake-on-LAN`.
-
-2. **Enable WoL in Ubuntu (`ethtool`):**
-
-   Check network interface name:
-
-   ```bash
-   ip link show
-   ```
-
-   Install `ethtool` and verify WoL support (`g` means Wake on Magic Packet):
-
-   ```bash
-   sudo apt update && sudo apt install -y ethtool
-   sudo ethtool enp3s0 | grep "Wake-on"
-   # Supports Wake-on: pumbg
-   # Wake-on: g
-   ```
-
-3. **Make WoL Persistent across Reboots:**
-
-   Create a systemd service at `/etc/systemd/system/wol.service`:
-
-   ```ini
-   [Unit]
-   Description=Enable Wake-on-LAN
-   After=network.target
-
-   [Service]
-   Type=oneshot
-   ExecStart=/sbin/ethtool -s enp3s0 wol g
-
-   [Install]
-   WantedBy=basic.target
-   ```
-
-   Enable the service:
-
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now wol.service
-   ```
-
-4. **Send Magic Packet from Client:**
-
-   <Tabs>
-     <TabItem label="Linux" icon="linux">
-       ```bash wakeonlan AA:BB:CC:DD:EE:FF # or using etherwake sudo etherwake -i eth0
-       AA:BB:CC:DD:EE:FF ```
-     </TabItem>
-     <TabItem label="Windows (PowerShell)">
-       ```powershell # Using wol.exe or PowerShell script Send-WOL -MacAddress "AA:BB:CC:DD:EE:FF"
-       ```
-     </TabItem>
-   </Tabs>
+1. Boot from the installer USB and select **Ubuntu Server (Minimal)** to avoid installing desktop GUI bloatware.
+2. Select **OpenSSH Server** when prompted during the installer package step.
+3. Complete the installation and reboot into your fresh minimal terminal interface.
 
 </Steps>
 
 ---
 
-## ➡️ Next Step Choices
+## 🔐 Part 2: Security & Remote Access
 
-Select your runtime environment:
+### 1. Static LAN IP Reservation (Netplan)
 
-- [Path A: Fast Node Manager (`fnm`) & Node.js →](/home-server/02-runtimes#option-a-nodejs-via-fnm)
-- [Path B: Python Virtual Environments →](/home-server/02-runtimes#option-b-python-environments)
-- [Path C: Full Global Stack →](/home-server/02-runtimes#option-c-global-system-stack)
+Assign a static IP address to your server so SSH and internal routing targets remain constant across router reboots.
+
+Inspect your network interface name:
+
+```bash
+ip link show
+# Example output interface: enp2s0
+```
+
+Edit your Netplan configuration file at `/etc/netplan/00-installer-config.yaml`:
+
+```yaml
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp2s0:
+      dhcp4: no
+      addresses:
+        - 192.168.1.150/24
+      routes:
+        - to: default
+          via: 192.168.1.1
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
+      match:
+        macaddress: "xx:xx:xx:xx:xx:xx"
+      wakeonlan: true
+```
+
+Apply the netplan configuration:
+
+```bash
+sudo netplan apply
+```
+
+---
+
+### 2. SSH Key Authentication & Hardening
+
+Password-based SSH authentication is vulnerable to brute-force attacks. Secure remote access with `ed25519` SSH key pairs.
+
+#### Step A: Generate & Transfer SSH Key from Client Machine
+
+On your client machine (laptop/desktop):
+
+```bash
+# Generate key pair
+ssh-keygen -t ed25519 -C "admin@homeserver"
+
+# Copy key to remote server
+ssh-copy-id toni@192.168.1.150
+```
+
+#### Step B: Disable Password Authentication & Root Login
+
+Log into the server and harden `/etc/ssh/sshd_config.d/hardened.conf`:
+
+```ini
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+X11Forwarding no
+```
+
+Restart the SSH daemon:
+
+```bash
+sudo systemctl restart ssh
+```
+
+#### Step C: Remote File Transfers (`scp` & `rsync`)
+
+Transfer files securely between your workstation and home server:
+
+```bash
+# Local to Remote using scp
+scp -r ./my-app toni@192.168.1.150:/home/toni/
+
+# Remote log sync using rsync
+rsync -avz toni@192.168.1.150:/var/log/syslog ./server-syslog.log
+```
+
+---
+
+### 3. Wake-on-LAN (WoL) Setup
+
+Wake-on-LAN allows you to power on your home server remotely over the LAN using a magic ethernet packet.
+
+Verify interface WoL capability:
+
+```bash
+sudo ethtool enp2s0 | grep Wake
+# Look for: Supports Wake-on: pumbg / Wake-on: g
+```
+
+Enable WoL using `ethtool`:
+
+```bash
+sudo ethtool -s enp2s0 wol g
+```
+
+To wake your home server from another LAN machine or router:
+
+```bash
+# Install wakeonlan utility
+sudo apt install wakeonlan
+
+# Broadcast magic packet using server MAC address
+wakeonlan xx:xx:xx:xx:xx:xx
+```
+
+---
+
+### 4. Firewall (UFW) & Optional Remote Management
+
+Configure Uncomplicated Firewall (UFW) to enforce default-deny incoming rules:
+
+```bash
+# Set default policies
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+# Allow SSH and standard web traffic
+sudo ufw allow 22/tcp comment 'SSH'
+sudo ufw allow 80/tcp comment 'HTTP'
+sudo ufw allow 443/tcp comment 'HTTPS'
+
+# Enable firewall
+sudo ufw enable
+```
+
+#### Optional: Web-Based Management (Cockpit)
+
+If you prefer a web GUI dashboard for server metrics and terminal access:
+
+```bash
+sudo apt install cockpit
+sudo systemctl enable --now cockpit.socket
+sudo ufw allow 9090/tcp comment 'Cockpit Web Dashboard'
+```
+
+Access Cockpit at `https://192.168.1.150:9090`.

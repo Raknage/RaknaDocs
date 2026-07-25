@@ -1,122 +1,143 @@
 ---
 title: "04. Data Layer & Persistence"
-description: Database architecture strategies comparing bare-metal installations vs containerized Docker volumes.
+description: Containerized databases with Docker volumes vs bare-metal Postgres/MariaDB, and automated CRON backups.
 sidebar:
   order: 5
 ---
 
-import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-This guide outlines your database architecture choices: running database engines directly on host bare-metal versus running them in containerized Docker volumes.
-
----
-
-## 🗄 Choose Your Database Architecture
-
-<Tabs>
-  <TabItem label="Option A: Bare-Metal Database">
-
-    ### Running PostgreSQL / MySQL Directly on Host OS
-
-    Best for max performance, low container overhead, and serving multiple applications (both bare-metal and containerized) from a centralized local database server.
-
-    #### 1. PostgreSQL Bare-Metal Installation
-
-    ```bash
-    # Install PostgreSQL
-    sudo apt update && sudo apt install -y postgresql postgresql-contrib
-
-    # Start and enable service
-    sudo systemctl enable --now postgresql
-
-    # Create database user & database
-    sudo -u postgres psql -c "CREATE USER appuser WITH PASSWORD 'securepassword';"
-    sudo -u postgres psql -c "CREATE DATABASE appdb OWNER appuser;"
-    ```
-
-    #### 2. Configuring Host Network Listening
-
-    By default, PostgreSQL listens only on `localhost` (`127.0.0.1`). To allow local Docker containers or LAN apps to connect:
-
-    Edit `/etc/postgresql/16/main/postgresql.conf`:
-    ```text
-    listen_addresses = 'localhost, 172.17.0.1, 192.168.1.100'
-    ```
-
-    Edit `/etc/postgresql/16/main/pg_hba.conf`:
-    ```text
-    # Allow local Docker containers (docker0 subnet)
-    host    appdb           appuser         172.17.0.0/16           scram-sha-256
-    ```
-
-    Reload PostgreSQL:
-    ```bash
-    sudo systemctl reload postgresql
-    ```
-
-  </TabItem>
-  <TabItem label="Option B: Containerized Database">
-
-    ### Running Databases in Docker Volumes
-
-    Best for isolated per-application stacks (e.g., WordPress + MySQL), easy destruction/recreation, and zero host system package dependencies.
-
-    #### Docker Compose Database Stack (`docker-compose.db.yml`)
-
-    ```yaml
-    version: '3.8'
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        container_name: postgres_db
-        restart: always
-        environment:
-          POSTGRES_DB: appdb
-          POSTGRES_USER: appuser
-          POSTGRES_PASSWORD: securepassword
-        ports:
-          - "5432:5432"
-        volumes:
-          - pgdata:/var/lib/postgresql/data
-        networks:
-          - backend
-
-    volumes:
-      pgdata:
-        driver: local
-
-    networks:
-      backend:
-        driver: bridge
-    ```
-
-  </TabItem>
-</Tabs>
+> [!NOTE]  
+> **Layer Contract Card**  
+> 📥 **Requires:** Storage disk partition or directory mount (`/var/lib` or `/data`).  
+> 📤 **Provides:** Database engine connection URIs, persistent storage volumes, and automated database dump backups.
 
 ---
 
-## 💾 Storage Mounting & Persistent Disks
+## 🌟 Recommended Default Track: Containerized Database via Docker Volumes
 
-When mounting external hard drives or secondary SSDs for databases or Docker storage:
+Running database engines inside Docker containers with host-bound volume mounts provides simple upgrading, clean isolation, and zero host pollution.
+
+### 1. PostgreSQL Container with Host Volume Mount
+
+Create your persistent database host directory:
 
 ```bash
-# Identify disk UUID
-sudo blkid /dev/sdb1
+sudo mkdir -p /var/data/postgres
+sudo chown -R $USER:$USER /var/data/postgres
+```
 
-# Create mount directory
-sudo mkdir -p /mnt/storage
+Run PostgreSQL 16 container:
 
-# Add entry to /etc/fstab for auto-mounting on boot
-# UUID=xxxx-xxxx-xxxx  /mnt/storage  ext4  defaults,noatime  0  2
+```bash
+docker run -d \
+  --name postgres-db \
+  --restart always \
+  -e POSTGRES_USER=appuser \
+  -e POSTGRES_PASSWORD=securepassword \
+  -e POSTGRES_DB=appdb \
+  -v /var/data/postgres:/var/lib/postgresql/data \
+  -p 5432:5432 \
+  postgres:16-alpine
 ```
 
 ---
 
-## ➡️ Next Step Choices
+### 2. MariaDB / MySQL Container
 
-Select your overall application deployment model:
+```bash
+sudo mkdir -p /var/data/mariadb
 
-- [Path A: Bare-Metal Systemd Deployments →](/home-server/05-deployment-strategies#branch-a-bare-metal-systemd-deployment)
-- [Path B: Fully Containerized Docker Compose Stacks →](/home-server/05-deployment-strategies#branch-b-fully-containerized-docker-deployment)
-- [Path C: Hybrid Architecture (Bare-Metal DB + Container Apps) →](/home-server/05-deployment-strategies#branch-c-hybrid-architecture)
+docker run -d \
+  --name mariadb-db \
+  --restart always \
+  -e MYSQL_ROOT_PASSWORD=rootpassword \
+  -e MYSQL_DATABASE=wordpress \
+  -e MYSQL_USER=wpuser \
+  -e MYSQL_PASSWORD=wppassword \
+  -v /var/data/mariadb:/var/lib/mysql \
+  -p 3306:3306 \
+  mariadb:11
+```
+
+---
+
+## 🖥️ Alternative Branch: Bare-Metal Database Services
+
+If you prefer installing database servers directly on the Ubuntu host OS for raw performance without container overhead:
+
+### 1. Install Bare-Metal PostgreSQL
+
+```bash
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+```
+
+### 2. Configure Access Rules & Networking (`pg_hba.conf`)
+
+By default, PostgreSQL listens only on `127.0.0.1`.
+
+To allow local Docker containers or internal LAN machines to connect, edit `/etc/postgresql/16/main/postgresql.conf`:
+
+```ini
+listen_addresses = '*'
+```
+
+Configure authentication rules in `/etc/postgresql/16/main/pg_hba.conf`:
+
+```ini
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    appdb           appuser         192.168.1.0/24          scram-sha-256
+```
+
+Restart PostgreSQL:
+
+```bash
+sudo systemctl restart postgresql
+```
+
+---
+
+## 💾 Automated Database Backups (CRON)
+
+Never rely on container volume snapshots alone. Schedule automated SQL dump backups to a separate backup directory.
+
+### 1. PostgreSQL Automated Backup Script (`backup-postgres.sh`)
+
+Create `/home/toni/scripts/backup-postgres.sh`:
+
+```bash
+#!/bin/bash
+BACKUP_DIR="/home/toni/backups/postgres"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+mkdir -p "$BACKUP_DIR"
+
+# Execute pg_dump inside container
+docker exec postgres-db pg_dump -U appuser appdb > "$BACKUP_DIR/appdb_$TIMESTAMP.sql"
+
+# Compress backup
+gzip "$BACKUP_DIR/appdb_$TIMESTAMP.sql"
+
+# Delete backups older than 14 days
+find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +14 -delete
+```
+
+Make executable:
+
+```bash
+chmod +x /home/toni/scripts/backup-postgres.sh
+```
+
+### 2. Schedule via CRON
+
+Edit crontab:
+
+```bash
+crontab -e
+```
+
+Add daily 2:00 AM backup entry:
+
+```cron
+0 2 * * * /home/toni/scripts/backup-postgres.sh > /dev/null 2>&1
+```

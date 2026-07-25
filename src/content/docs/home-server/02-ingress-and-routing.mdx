@@ -1,0 +1,167 @@
+---
+title: "02. Ingress & Domain Routing (Traffic)"
+description: Domain DNS configuration, Cloudflare API tokens, Caddy auto-HTTPS reverse proxy, Nginx, and Cloudflare Tunnels.
+sidebar:
+  order: 3
+---
+
+import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+> [!NOTE]  
+> **Layer Contract Card**  
+> 📥 **Requires:** Static LAN IP (from Layer 1), Domain Name, Open Router Ports (80/443) OR Cloudflare Tunnel daemon.  
+> 📤 **Provides:** Public HTTPS reverse proxy, automatic wildcard SSL/TLS certificate renewal, subdomain routing to local app ports.
+
+---
+
+## 🌟 Recommended Default Track: Caddy + Cloudflare DNS API
+
+Caddy is an ultra-lightweight web server that automatically provisions and renews Let's Encrypt / ZeroSSL HTTPS certificates using Cloudflare DNS API challenges.
+
+### 1. Cloudflare DNS API Token Setup
+
+To allow Caddy to request wildcard certificates (`*.yourdomain.com`) without exposing DNS challenge ports:
+
+1. Log into your Cloudflare Dashboard and navigate to **My Profile → API Tokens**.
+2. Click **Create Token** and select the **Edit Zone DNS** template.
+3. Set permissions to: `Zone - DNS - Edit` for your domain.
+4. Copy the generated API token (e.g. `CLOUDFLARE_API_TOKEN=xxxx`).
+
+---
+
+### 2. Caddy Build & Installation
+
+If using Caddy with Cloudflare DNS challenge support, build Caddy with the Cloudflare module using `xcaddy` or download the pre-compiled binary:
+
+```bash
+# Install xcaddy builder
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-xcaddy-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-xcaddy.list
+sudo apt update && sudo apt install xcaddy
+
+# Build Caddy with Cloudflare plugin
+xcaddy build --with github.com/caddy-dns/cloudflare
+sudo mv caddy /usr/bin/caddy
+```
+
+---
+
+### 3. Caddyfile Configuration
+
+Create `/etc/caddy/Caddyfile`:
+
+```caddy
+{
+    # Global options: Set Cloudflare API Token for DNS-01 SSL challenge
+    acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+}
+
+# Domain rule for main web application
+app.yourdomain.com {
+    reverse_proxy localhost:3000
+}
+
+# Subdomain rule for internal services / analytics
+analytics.yourdomain.com {
+    reverse_proxy localhost:8080
+}
+```
+
+Set environment variables in `/etc/systemd/system/caddy.service.d/override.conf`:
+
+```ini
+[Service]
+Environment="CLOUDFLARE_API_TOKEN=your_actual_token_here"
+```
+
+Restart Caddy:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart caddy
+```
+
+---
+
+## 🔀 Alternative Branch 1: Traditional Nginx Reverse Proxy
+
+If you prefer traditional Nginx configuration files and Certbot SSL certificate management:
+
+### 1. Install Nginx & Certbot
+
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+```
+
+### 2. Configure Nginx Server Block
+
+Edit `/etc/nginx/sites-available/app.yourdomain.com`:
+
+```nginx
+server {
+    listen 80;
+    server_name app.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Enable site link and test configuration:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/app.yourdomain.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 3. Issue SSL Certificate via Certbot
+
+```bash
+sudo certbot --nginx -d app.yourdomain.com
+```
+
+---
+
+## 🛡️ Alternative Branch 2: Cloudflare Zero-Trust Tunnels (`cloudflared`)
+
+If your ISP blocks incoming ports 80/443 or you want to avoid port forwarding entirely, use Cloudflare Zero-Trust Tunnels.
+
+### 1. Install `cloudflared` Daemon
+
+```bash
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared.deb
+```
+
+### 2. Authenticate & Create Tunnel
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create homeserver-tunnel
+```
+
+### 3. Configure Tunnel Routing (`~/.cloudflared/config.yml`)
+
+```yaml
+tunnel: <TUNNEL_UUID>
+credentials-file: /root/.cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: app.yourdomain.com
+    service: http://localhost:3000
+  - service: http_status:404
+```
+
+Route DNS and run as a system service:
+
+```bash
+cloudflared tunnel route dns homeserver-tunnel app.yourdomain.com
+sudo cloudflared service install
+```

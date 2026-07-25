@@ -5,61 +5,130 @@ sidebar:
   order: 1
 ---
 
-import { Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
+import { Card, CardGrid, LinkCard, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
-Welcome to the **Home Server Setup & Deployment Runbook**. This documentation is structured as a **Choose Your Own Adventure (CYOA)** decision tree, allowing you to select your preferred operating system, runtime, ingress layer, data persistence model, and deployment strategy.
-
-## 🧭 Architecture Decision Flowchart
-
-Follow the modular layers in sequence. Each layer is decoupled so you can swap out technologies at any step without breaking the rest of your infrastructure.
-
-```mermaid
-graph TD
-    A[01. Host OS & Hardware<br/>Ubuntu Server / Wake-on-LAN / SSH] --> B[02. Runtime Environment<br/>Node.js fnm vs Python vs Global]
-    B --> C[03. Ingress & Routing<br/>Cloudflare DNS + Caddy vs Nginx]
-    C --> D[04. Data Persistence<br/>Bare-Metal DB vs Docker Volume DB]
-    D --> E{05. Deployment Strategy}
-    E -->|Path A| F[Bare-Metal Systemd]
-    E -->|Path B| G[Docker Compose Stack]
-    E -->|Path C| H[Hybrid Architecture]
-```
+Welcome to the **Home Server Setup & Deployment Runbook**. This guide is built as an interactive **Choose Your Own Adventure (CYOA)** decision engine. Every technical layer is decoupled with standardized **Input/Output Contracts**, allowing you to pick recommended defaults or swap out components at any layer.
 
 ---
 
-## 📦 Modular Infrastructure Layers
+## ⚡ Preset Fast-Tracks
+
+If you want a pre-validated, end-to-end architecture without picking individual components, select one of these Fast-Tracks:
 
 <CardGrid>
-  <Card title="01. Host Platform & Remote Access" icon="laptop">
-    Hardware setup, Ubuntu Server configuration, SSH key-based authentication, and Wake-on-LAN (WoL)
-    setup. [Explore Host Setup →](/home-server/01-host-and-access)
+  <Card title="Track A: Minimal Node.js Server (Recommended)" icon="rocket">
+    **Ideal for:** Single-purpose web tools & Astro apps. **Stack:** Ubuntu Server → `fnm` Node.js →
+    Caddy Auto-HTTPS → Systemd Service. [Deploy Track A →](/home-server/01-host-and-access)
   </Card>
-  <Card title="02. Runtime & Process Management" icon="setting">
-    Configure execution environments: Fast Node Manager (`fnm`), Python virtual environments, and
-    system environment variables. [Explore Runtimes →](/home-server/02-runtimes)
+  <Card title="Track B: Containerized WordPress Stack" icon="laptop">
+    **Ideal for:** CMS platforms & multi-container web stacks. **Stack:** Ubuntu Server → Docker
+    Compose → MariaDB Volume → Caddy Reverse Proxy. [Deploy Track B
+    →](/home-server/05-deployment-strategies)
   </Card>
-  <Card title="03. Ingress & Domain Routing" icon="globe">
-    Domain DNS management via Cloudflare API and automatic HTTPS reverse proxying with Caddy or
-    Nginx. [Explore Ingress →](/home-server/03-ingress-and-routing)
-  </Card>
-  <Card title="04. Data Layer & Persistence" icon="external">
-    Compare bare-metal database installations (PostgreSQL / MySQL) against containerized database
-    volumes and backup policies. [Explore Data Layer →](/home-server/04-database-and-storage)
-  </Card>
-  <Card title="05. Deployment Strategies" icon="rocket">
-    Choose your deployment model: Bare-metal Systemd services, fully containerized Docker Compose
-    stacks, or hybrid setups. [Explore Deployments →](/home-server/05-deployment-strategies)
+  <Card title="Track C: Hybrid Bare-Metal DB + Proxy" icon="setting">
+    **Ideal for:** High-performance databases & native Node services. **Stack:** Ubuntu Server →
+    Native Postgres → `fnm` Node.js → Caddy → Systemd. [Deploy Track C
+    →](/home-server/04-database-and-storage)
   </Card>
 </CardGrid>
 
 ---
 
-## 🚀 Quick Start Checklist
+## 🧭 Architecture Decision Flowchart & Matrix
+
+<Tabs>
+  <TabItem label="Visual Mermaid Diagram">
+    ```mermaid
+    graph TD
+        subgraph Layer1["01. Host Platform & Remote Access"]
+            L1A[Minimal Ubuntu Server Install] --> L1B[SSH Key Auth & Security Hardening]
+            L1B --> L1C[Netplan Static IP & Wake-on-LAN]
+        end
+
+        subgraph Layer2["02. Ingress & Domain Routing (Traffic)"]
+            L1C --> L2A{Choose Ingress}
+            L2A -->|Recommended| L2B[Caddy + Cloudflare DNS API Token]
+            L2A -->|Alternative 1| L2C[Nginx + Certbot SSL]
+            L2A -->|Alternative 2| L2D[Cloudflare Zero-Trust Tunnel]
+        end
+
+        subgraph Layer3["03. Runtime Environments"]
+            L2B & L2C & L2D --> L3A{Choose Runtime}
+            L3A -->|Recommended| L3B[Fast Node Manager fnm]
+            L3A -->|Alternative| L3C[Python venv / System Env Vars]
+        end
+
+        subgraph Layer4["04. Data Layer & Persistence"]
+            L3B & L3C --> L4A{Choose Database}
+            L4A -->|Recommended| L4B[Containerized DB + Docker Volumes]
+            L4A -->|Alternative| L4C[Bare-Metal Postgres / MySQL]
+        end
+
+        subgraph Layer5["05. Deployment Strategies"]
+            L4B & L4C --> L5A{Choose Deployment}
+            L5A -->|Recommended| L5B[Docker Compose Multi-Container Stack]
+            L5A -->|Alternative 1| L5C[Bare-Metal Systemd Service]
+            L5A -->|Alternative 2| L5D[Hybrid Host-Container Setup]
+        end
+    ```
+
+  </TabItem>
+
+  <TabItem label="Decision Matrix Table">
+    | Layer | Recommended Default | Alternative Option 1 | Alternative Option 2 | Link |
+    |---|---|---|---|---|
+    | **01. Host & Access** | Ubuntu Minimal Server + SSH Keys | Laptop/Legacy Hardware Prep | Netplan Static IP + WoL | [Explore Layer 1 →](/home-server/01-host-and-access) |
+    | **02. Ingress (Traffic)** | Caddy + Cloudflare DNS API | Nginx + Certbot SSL | Cloudflare Zero-Trust Tunnel | [Explore Layer 2 →](/home-server/02-ingress-and-routing) |
+    | **03. Runtimes** | Node.js via `fnm` | Python `venv` Environments | System Env Vars (`/etc/environment`) | [Explore Layer 3 →](/home-server/03-runtimes) |
+    | **04. Database** | Docker Volume Persistence Mounts | Bare-Metal PostgreSQL / MariaDB | Automated `pg_dump` CRON Backups | [Explore Layer 4 →](/home-server/04-database-and-storage) |
+    | **05. Deployment** | Docker Compose Stacks | Bare-Metal Systemd Services | Hybrid `host.docker.internal` | [Explore Layer 5 →](/home-server/05-deployment-strategies) |
+  </TabItem>
+</Tabs>
+
+---
+
+## 📦 Modular Runbook Layers
+
+<CardGrid>
+  <Card title="01. Host Platform & Remote Access" icon="laptop">
+    Hardware repurposing, Ubuntu minimal OS installation, SSH key pair authentication, Netplan static IP reservation, `ethtool` Wake-on-LAN, and UFW firewall rules.
+    [Explore Host & Access →](/home-server/01-host-and-access)
+  </Card>
+
+<Card title="02. Ingress & Domain Routing" icon="globe">
+  Cloudflare DNS API integration, automatic wildcard SSL/TLS certificates with Caddy, traditional
+  Nginx reverse proxies, and Cloudflare Tunnels. [Explore Ingress & Traffic
+  →](/home-server/02-ingress-and-routing)
+</Card>
+
+<Card title="03. Runtime Environments" icon="setting">
+  Isolated development and production runtimes: Fast Node Manager (`fnm`), Python virtual
+  environments (`venv`), and environment variable handling. [Explore Runtimes
+  →](/home-server/03-runtimes)
+</Card>
+
+<Card title="04. Data Layer & Persistence" icon="external">
+  PostgreSQL & MariaDB/MySQL database options: Containerized Docker volumes (`/var/data/db`),
+  bare-metal services, and automated dump backups. [Explore Data Layer
+  →](/home-server/04-database-and-storage)
+</Card>
+
+  <Card title="05. Deployment Strategies" icon="rocket">
+    Service lifecycle orchestration: Multi-container Docker Compose stacks (`restart: always`), native systemd service units (`journalctl`), and hybrid deployments.
+    [Explore Deployment Strategies →](/home-server/05-deployment-strategies)
+  </Card>
+</CardGrid>
+
+---
+
+## 🚀 Step-by-Step Quick Start
 
 <Steps>
 
-1. **Provision Host OS:** Setup legacy/dedicated hardware with Ubuntu Server and configure SSH key access.
-2. **Setup Runtimes:** Install `fnm` for Node.js or `uv`/`venv` for Python depending on your app needs.
-3. **Configure Ingress:** Point Cloudflare DNS to your IP and let Caddy automate SSL certificates.
-4. **Deploy Services:** Spin up your application via Docker Compose or native Systemd user services.
+1. **Host & Remote Access:** Install minimal Ubuntu Server, configure SSH keys, set static LAN IP, and enable UFW firewall rules.
+2. **Ingress Gateway:** Route domain DNS through Cloudflare and launch Caddy for automated HTTPS certificates.
+3. **Runtime Engine:** Setup `fnm` for Node.js or `venv` for Python depending on your application needs.
+4. **Data Persistence:** Provision containerized database volumes or native DB services.
+5. **Deployment:** Launch your application using Docker Compose or native Systemd user services.
 
 </Steps>

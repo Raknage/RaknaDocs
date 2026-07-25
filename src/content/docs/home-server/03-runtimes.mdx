@@ -1,0 +1,142 @@
+---
+title: "03. Runtime Environments & Process Setup"
+description: Fast Node Manager (fnm), Python virtual environments (venv), systemd PATH resolution, and environment variables.
+sidebar:
+  order: 4
+---
+
+import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+> [!NOTE]  
+> **Layer Contract Card**  
+> 📥 **Requires:** Shell Access (from Layer 1).  
+> 📤 **Provides:** Isolated Node.js and Python executable binary paths, environment variable files, systemd PATH hooks.
+
+---
+
+## 🌟 Recommended Default Track: Node.js via `fnm` (Fast Node Manager)
+
+`fnm` (Fast Node Manager) is a Rust-built, ultra-fast Node.js version manager. Unlike NVM, `fnm` does not slow down shell startup and provides automatic `.nvmrc` / `.node-version` switching on directory changes.
+
+### 1. Installing `fnm`
+
+Run the official installer script:
+
+```bash
+curl -fsSL https://fnm.vercel.app/install | bash
+```
+
+Add the environment shell hook to `~/.bashrc`:
+
+```bash
+# Add fnm to PATH and enable auto-use on cd
+eval "$(fnm env --use-on-cd)"
+```
+
+Reload shell configuration:
+
+```bash
+source ~/.bashrc
+```
+
+---
+
+### 2. Installing & Managing Node.js Versions
+
+```bash
+# Install latest LTS Node.js release
+fnm install --lts
+
+# Set default LTS version
+fnm default lts-latest
+
+# Verify installation
+node -v
+npm -v
+pnpm -v # or corepack enable
+```
+
+---
+
+### 3. Systemd Binary PATH Resolution for `fnm`
+
+Because systemd runs background services in an isolated environment without loading `~/.bashrc`, systemd unit files must point to the canonical `fnm` binary symlink:
+
+Canonical binary path for `fnm` Node executable:
+
+```bash
+/home/toni/.local/share/fnm/current/bin/node
+/home/toni/.local/share/fnm/current/bin/npm
+```
+
+Example systemd ExecStart entry:
+
+```ini
+ExecStart=/home/toni/.local/share/fnm/current/bin/node /home/toni/my-app/server.js
+```
+
+---
+
+## 🐍 Alternative Branch: Python Runtimes (`venv`)
+
+To prevent contaminating system Python packages managed by Ubuntu `apt`, always use Python virtual environments (`venv`) for application dependencies.
+
+### 1. Install Python venv Support
+
+```bash
+sudo apt install python3-venv python3-pip
+```
+
+### 2. Create & Activate Project Virtualenv
+
+```bash
+# Navigate to project directory
+cd /home/toni/my-python-app
+
+# Create virtual environment named 'venv'
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Install requirements
+pip install -r requirements.txt
+```
+
+Canonical binary path for systemd Python services:
+
+```bash
+/home/toni/my-python-app/venv/bin/python
+```
+
+---
+
+## 🔑 Environment Variable Management
+
+Keep application secrets out of repository source code using system or project-level environment configuration.
+
+### 1. Project-Isolated `.env` Files
+
+Create a `.env` file in your application root directory:
+
+```ini
+PORT=3000
+DATABASE_URL="postgresql://user:pass@localhost:5432/mydb"
+SECRET_KEY="supersecretkeyhere"
+```
+
+### 2. System-Wide Environment Variables (`/etc/environment`)
+
+For variables shared across all services on the server:
+
+```bash
+# Edit system environment file
+sudo nano /etc/environment
+```
+
+Add global exports:
+
+```ini
+NODE_ENV="production"
+SERVER_REGION="helsinki-home"
+```
