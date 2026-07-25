@@ -36,7 +36,7 @@ Configure SSH key-based authentication for fast, secure passwordless logins.
 ### 1. Generating & Copying SSH Keys
 
 <Tabs>
-  <TabItem label="Linux / macOS">
+  <TabItem label="Linux" icon="linux">
     ```bash
     # Generate SSH key pair
     ssh-keygen -t ed25519 -C "homeserver-key"
@@ -46,6 +46,7 @@ Configure SSH key-based authentication for fast, secure passwordless logins.
     ```
 
   </TabItem>
+
   <TabItem label="Windows (PowerShell)">
     ```powershell
     # Generate SSH key pair
@@ -62,7 +63,7 @@ Configure SSH key-based authentication for fast, secure passwordless logins.
 
 Simplify remote access by creating an SSH alias on your client machine:
 
-```text
+```ini
 Host homeserver
     HostName 192.168.1.100
     User adminuser
@@ -80,11 +81,17 @@ ssh homeserver
 
 <Tabs>
   <TabItem label="rsync (Recommended)">
-    ```bash # Sync local directory to server rsync -avzP --exclude 'node_modules' ./my-app/
-    homeserver:/opt/apps/my-app/ ```
+    ```bash
+     # Sync local directory to server rsync -avzP --exclude 'node_modules' ./my-app/
+    homeserver:/opt/apps/my-app/ 
+    ```
   </TabItem>
+
   <TabItem label="scp">
-    ```bash # Copy single file or tar archive scp ./deploy-bundle.tar.gz homeserver:/tmp/ ```
+    ```bash
+    # Copy single file or tar archive 
+    scp ./deploy-bundle.tar.gz homeserver:/tmp/ 
+    ```
   </TabItem>
 </Tabs>
 
@@ -143,7 +150,7 @@ Wake-on-LAN allows you to remotely power on your server over the local network u
 4. **Send Magic Packet from Client:**
 
    <Tabs>
-     <TabItem label="Linux / macOS">
+     <TabItem label="Linux" icon="linux">
        ```bash wakeonlan AA:BB:CC:DD:EE:FF # or using etherwake sudo etherwake -i eth0
        AA:BB:CC:DD:EE:FF ```
      </TabItem>

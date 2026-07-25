@@ -47,7 +47,7 @@ The Ingress layer manages incoming web traffic, domain name routing, automatic S
 
     #### 3. Configuring `/etc/caddy/Caddyfile`
 
-    ```caddy
+    ```ini
     {
         email admin@example.com
     }
@@ -70,7 +70,7 @@ The Ingress layer manages incoming web traffic, domain name routing, automatic S
     ```
 
     Create `/etc/caddy/env` for your API token:
-    ```env
+    ```dotenv
     CLOUDFLARE_API_TOKEN=cf_api_token_abc123...
     ```
 
