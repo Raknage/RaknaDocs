@@ -326,8 +326,8 @@ sudo ufw enable
 If you prefer a web GUI dashboard for server metrics, software updates, and terminal access:
 
 ```bash
-# Install Cockpit, PackageKit update integration, and enable service socket
-sudo apt install -y cockpit cockpit-packagekit packagekit
+# Install Cockpit, PackageKit tools (pkcon), and update integration
+sudo apt install -y cockpit cockpit-packagekit packagekit packagekit-tools
 sudo systemctl enable --now cockpit.socket
 sudo ufw allow 9090/tcp comment 'Cockpit Web Dashboard'
 ```
@@ -339,9 +339,12 @@ Access Cockpit at `https://192.168.1.xxx:9090`.
 
 **Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. Cockpit's PackageKit update module queries NetworkManager for online status and falsely assumes the system is offline because NetworkManager is not handling the interface.
 
-**Fix:** Run `pkcon refresh force` in terminal to force PackageKit to sync cache, then restart the PackageKit service:
+**Fix:** Install `packagekit-tools` (which provides the `pkcon` command), force a cache refresh, and restart PackageKit:
 
 ```bash
+# Install packagekit-tools (provides pkcon CLI tool)
+sudo apt install -y packagekit-tools
+
 # Force PackageKit to sync cache and restart daemon
 sudo pkcon refresh force
 sudo systemctl restart packagekit
