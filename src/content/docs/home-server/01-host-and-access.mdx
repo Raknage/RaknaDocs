@@ -132,9 +132,30 @@ sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
 1. Boot from the installer USB and select **Ubuntu Server (Minimal)** for a clean, lightweight server baseline.
 2. Select **Use An Entire Disk** with default LVM options (or edit `ubuntu-lv` size to `max` to avoid the 100 GB cap).
 3. Select **OpenSSH Server** when prompted during the installer package step.
-4. Complete the installation and reboot into your fresh minimal terminal interface.
+4. Complete the installation, remove USB installation media, and reboot into your fresh server terminal.
+5. **Initial System Update & Essential Tools:** Log in and run an immediate system package refresh and install essential CLI editing tools (`nano`, `curl`, `git`, `htop`):
+
+   ```bash
+   # Refresh package index and apply latest security upgrades
+   sudo apt update && sudo apt upgrade -y
+
+   # Install essential editing, retrieval, and monitoring packages
+   sudo apt install -y nano curl git htop net-tools
+   ```
 
 </Steps>
+
+#### 🛠️ Essential `apt` Package Manager Cheat Sheet
+
+| Action / Purpose               | Command                     | Notes                                                                 |
+| :----------------------------- | :-------------------------- | :-------------------------------------------------------------------- |
+| **Refresh Package Index**      | `sudo apt update`           | Fetches latest available package lists from Ubuntu mirrors            |
+| **Upgrade Installed Packages** | `sudo apt upgrade -y`       | Installs latest security patches and updates for installed software   |
+| **Install New Package**        | `sudo apt install -y nano`  | Installs a text editor, tool, or service (e.g. `nano`, `curl`, `git`) |
+| **Search Repositories**        | `apt search <keyword>`      | Searches Ubuntu repositories for available software packages          |
+| **Remove Package**             | `sudo apt remove <package>` | Uninstalls package while preserving configuration files               |
+| **Purge Package & Configs**    | `sudo apt purge <package>`  | Uninstalls package and deletes its configuration files                |
+| **Clean Orphaned Packages**    | `sudo apt autoremove -y`    | Removes leftover dependency packages to reclaim disk space            |
 
 ---
 
