@@ -5,12 +5,18 @@ sidebar:
   order: 3
 ---
 
-import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-> [!NOTE]  
-> **Layer Contract Card**  
-> 📥 **Requires:** Static LAN IP (from Layer 1), Domain Name, Open Router Ports (80/443) OR Cloudflare Tunnel daemon.  
-> 📤 **Provides:** Public HTTPS reverse proxy, automatic wildcard SSL/TLS certificate renewal, subdomain routing to local app ports.
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Static LAN IP (from Layer 1), Domain Name, Open
+    Router Ports (80/443) OR Cloudflare Tunnel daemon.
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Public HTTPS reverse proxy, automatic wildcard
+    SSL/TLS certificate renewal, subdomain routing to local app ports.
+  </p>
+</Aside>
 
 ---
 

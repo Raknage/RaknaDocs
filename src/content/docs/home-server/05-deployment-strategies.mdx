@@ -5,12 +5,18 @@ sidebar:
   order: 6
 ---
 
-import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-> [!NOTE]  
-> **Layer Contract Card**  
-> 📥 **Requires:** Application code or built artifact, runtime environment (Layer 3), and optional database (Layer 4).  
-> 📤 **Provides:** Long-running application process management, automatic restart policies, and reverse proxy network integration.
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Application code or built artifact, runtime
+    environment (Layer 3), and optional database (Layer 4).
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Long-running application process management,
+    automatic restart policies, and reverse proxy network integration.
+  </p>
+</Aside>
 
 ---
 

@@ -5,12 +5,18 @@ sidebar:
   order: 5
 ---
 
-import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-> [!NOTE]  
-> **Layer Contract Card**  
-> 📥 **Requires:** Storage disk partition or directory mount (`/var/lib` or `/data`).  
-> 📤 **Provides:** Database engine connection URIs, persistent storage volumes, and automated database dump backups.
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Storage disk partition or directory mount
+    (`/var/lib` or `/data`).
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Database engine connection URIs, persistent storage
+    volumes, and automated database dump backups.
+  </p>
+</Aside>
 
 ---
 

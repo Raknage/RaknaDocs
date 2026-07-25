@@ -5,12 +5,18 @@ sidebar:
   order: 2
 ---
 
-import { Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-> [!NOTE]  
-> **Layer Contract Card**  
-> 📥 **Requires:** Target PC/Laptop hardware, storage drives, ethernet connection, USB installer drive.  
-> 📤 **Provides:** Secured SSH access, static LAN IP address, Wake-on-LAN capability, and hardened UFW firewall.
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Target PC/Laptop hardware, storage drives, ethernet
+    connection, USB installer drive.
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Secured SSH access, static LAN IP address,
+    Wake-on-LAN capability, and hardened UFW firewall.
+  </p>
+</Aside>
 
 ---
 
@@ -34,12 +40,10 @@ For home servers with multiple drives or dedicated SSD partitions, separate OS s
 /var/lib   →  240 GB SSD  (Postgres database clusters, Docker volumes)
 ```
 
-> [!TIP]  
-> **ext4 Tuning:** For dedicated ext4 data drives, reduce default reserved root block percentages from 5% to 1% to reclaim disk space:
->
-> ```bash
-> sudo tune2fs -m 1 /dev/sdb1
-> ```
+<Aside type="tip" title="ext4 Tuning">
+  For dedicated ext4 data drives, reduce default reserved root block percentages from 5% to 1% to
+  reclaim disk space: ```bash sudo tune2fs -m 1 /dev/sdb1 ```
+</Aside>
 
 ### 3. Ubuntu Server Minimal Installation
 
