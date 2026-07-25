@@ -337,14 +337,15 @@ Access Cockpit at `https://192.168.1.xxx:9090`.
 <Aside type="caution" title="Troubleshooting Cockpit: 'Cannot refresh cache whilst offline'">
   <p><Badge text="Gotcha" variant="danger" /> Cockpit Software Updates tab reports: <em>Loading available updates failed — Cannot refresh cache whilst offline</em>.</p>
 
-**Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. Cockpit's PackageKit update module queries NetworkManager's D-Bus interface for online status and falsely assumes the system is offline when NetworkManager is absent.
+**Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. PackageKit queries NetworkManager over D-Bus to check if the network is active. Because NetworkManager is not managing the interface, PackageKit falsely assumes the server is offline and refuses to check updates.
 
-**Fix:** Install `network-manager` (which provides the D-Bus network state to PackageKit), sync `apt`, and restart PackageKit:
+**Fix:** Configure PackageKit to disable the NetworkManager online check in `/etc/PackageKit/PackageKit.conf`:
 
 ```bash
-# Install NetworkManager to provide network online status to PackageKit
-sudo apt update
-sudo apt install -y network-manager
+# 1. Disable NetworkManager online check in PackageKit config
+sudo sed -i 's/UseNetworkManager=true/UseNetworkManager=false/g' /etc/PackageKit/PackageKit.conf
+
+# 2. Restart PackageKit daemon
 sudo systemctl restart packagekit
 ```
 
