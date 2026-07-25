@@ -44,9 +44,10 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
     └── /var/log                → Systemd journalctl logs and service application logs
     ```
 
-    <Aside type="tip" title="ext4 Reserved Block Tuning">
-      By default, ext4 reserves 5% of drive space (~12 GB on a 240 GB SSD) for the root user. Reduce this reserved space to 1% to instantly reclaim ~9.6 GB of usable SSD storage:
+    <Aside type="tip" title="ext4 Reserved Block Tuning (Post-Installation)">
+      By default, ext4 reserves 5% of drive space (~12 GB on a 240 GB SSD) for the root user. **After installation completes and you boot into your server**, run `tune2fs` to reduce this reserved space to 1% and instantly reclaim ~9.6 GB of usable SSD storage:
       ```bash
+      # Run on your installed system via terminal / SSH
       sudo tune2fs -m 1 /dev/sda3   # Replace /dev/sda3 with your root partition (e.g. /dev/nvme0n1p3)
       ```
     </Aside>
@@ -76,18 +77,34 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
   </TabItem>
 </Tabs>
 
-### 3. Ubuntu Server Installation (Standard vs Minimal)
+### 3. Ubuntu Server Installation & Partitioning Guidelines
 
 Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash to a USB drive using Rufus or BalenaEtcher.
 
-> [!NOTE]  
-> **Minimal vs Standard Server:** Neither standard nor minimal Ubuntu Server installs a graphical desktop GUI (unlike Ubuntu Desktop). Selecting **Ubuntu Server (Minimal)** strips out ~200+ non-essential CLI tools, Snap packages, LXD containers, and background telemetry daemons, creating a lean ~1.5 GB installation footprint (vs ~3.5 GB for standard server).
+<Aside type="note" title="Minimal vs Standard Server">
+  Neither standard nor minimal Ubuntu Server installs a graphical desktop GUI (unlike Ubuntu
+  Desktop). Selecting **Ubuntu Server (Minimal)** strips out ~200+ non-essential CLI tools, Snap
+  packages, LXD containers, and background telemetry daemons, creating a lean ~1.5 GB installation
+  footprint (vs ~3.5 GB for standard server).
+</Aside>
+
+<Aside type="note" title="Swap Partition vs Swap File">
+  <p>
+    <Badge text="Recommendation" variant="success" /> Do <strong>NOT</strong> create a dedicated
+    swap partition during installation.
+  </p>
+  Modern Ubuntu Server automatically provisions a dynamic <strong>swap file</strong> (
+  <code>/swap.img</code>) on your main SSD partition. Using a swap file keeps partitioning simple
+  and allows you to resize swap later (e.g. <code>fallocate -l 4G /swapfile</code>) without needing
+  disk repartitioning.
+</Aside>
 
 <Steps>
 
 1. Boot from the installer USB and select **Ubuntu Server (Minimal)** for a clean, lightweight server baseline.
-2. Select **OpenSSH Server** when prompted during the installer package step.
-3. Complete the installation and reboot into your fresh minimal terminal interface.
+2. Select **Use An Entire Disk** with default LVM options (no separate swap partition required).
+3. Select **OpenSSH Server** when prompted during the installer package step.
+4. Complete the installation and reboot into your fresh minimal terminal interface.
 
 </Steps>
 
