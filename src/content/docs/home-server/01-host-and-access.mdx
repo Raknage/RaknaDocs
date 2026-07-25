@@ -99,10 +99,32 @@ Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash t
   disk repartitioning.
 </Aside>
 
+<Aside type="caution" title="Understanding Ubuntu Default LVM & The 100GB Root Limit">
+  <p><Badge text="Gotcha" variant="danger" /> By default, Ubuntu Server installer caps root (<code>/</code>) at <strong>100 GB</strong> regardless of SSD size!</p>
+
+When installing Ubuntu Server on a 240 GB SSD, the installer creates 3 default partitions:
+
+- `/boot/efi` (1 GB): UEFI bootloader partition (FAT32) required by modern motherboards.
+- `/boot` (2 GB): Stores Linux kernels (`vmlinuz`) and boot system files.
+- `ubuntu-vg/ubuntu-lv` mounted at `/` (100 GB): Logical Volume for your OS & files.
+
+**Why is root capped at 100 GB?** Ubuntu leaves the remaining ~137 GB unallocated in the LVM Volume Group (`ubuntu-vg`) as a safety buffer for LVM snapshots or volume expansion.
+
+**How to expand root to use full 240 GB SSD space:**
+
+- **During Install:** On the guided storage screen, select `ubuntu-lv`, edit size, and change to `max` or `100%`.
+- **Post-Install (Single Command):** If you already installed with 100 GB default, run this in terminal to instantly expand root to full disk size without rebooting:
+  `bash
+  # Expand LVM logical volume and resize ext4 filesystem to 100% free space
+  sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
+  sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
+  `
+  </Aside>
+
 <Steps>
 
 1. Boot from the installer USB and select **Ubuntu Server (Minimal)** for a clean, lightweight server baseline.
-2. Select **Use An Entire Disk** with default LVM options (no separate swap partition required).
+2. Select **Use An Entire Disk** with default LVM options (or edit `ubuntu-lv` size to `max` to avoid the 100 GB cap).
 3. Select **OpenSSH Server** when prompted during the installer package step.
 4. Complete the installation and reboot into your fresh minimal terminal interface.
 
