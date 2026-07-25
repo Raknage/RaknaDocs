@@ -326,8 +326,8 @@ sudo ufw enable
 If you prefer a web GUI dashboard for server metrics, software updates, and terminal access:
 
 ```bash
-# Install Cockpit, PackageKit tools (pkcon), and update integration
-sudo apt install -y cockpit cockpit-packagekit packagekit packagekit-tools
+# Install Cockpit, PackageKit update integration, and NetworkManager
+sudo apt install -y cockpit cockpit-packagekit packagekit network-manager
 sudo systemctl enable --now cockpit.socket
 sudo ufw allow 9090/tcp comment 'Cockpit Web Dashboard'
 ```
@@ -337,16 +337,14 @@ Access Cockpit at `https://192.168.1.xxx:9090`.
 <Aside type="caution" title="Troubleshooting Cockpit: 'Cannot refresh cache whilst offline'">
   <p><Badge text="Gotcha" variant="danger" /> Cockpit Software Updates tab reports: <em>Loading available updates failed — Cannot refresh cache whilst offline</em>.</p>
 
-**Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. Cockpit's PackageKit update module queries NetworkManager for online status and falsely assumes the system is offline because NetworkManager is not handling the interface.
+**Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. Cockpit's PackageKit update module queries NetworkManager's D-Bus interface for online status and falsely assumes the system is offline when NetworkManager is absent.
 
-**Fix:** Install `packagekit-tools` (which provides the `pkcon` command), force a cache refresh, and restart PackageKit:
+**Fix:** Install `network-manager` (which provides the D-Bus network state to PackageKit), sync `apt`, and restart PackageKit:
 
 ```bash
-# Install packagekit-tools (provides pkcon CLI tool)
-sudo apt install -y packagekit-tools
-
-# Force PackageKit to sync cache and restart daemon
-sudo pkcon refresh force
+# Install NetworkManager to provide network online status to PackageKit
+sudo apt update
+sudo apt install -y network-manager
 sudo systemctl restart packagekit
 ```
 
