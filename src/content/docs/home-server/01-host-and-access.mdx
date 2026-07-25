@@ -105,7 +105,7 @@ When installing Ubuntu Server on a 240 GB SSD, the installer creates 3 default p
 - `/boot` (2 GB): Stores Linux kernels (`vmlinuz`) and boot system files.
 - `ubuntu-vg/ubuntu-lv` mounted at `/` (100 GB): Logical Volume for your OS & files.
 
-**Why leaves unallocated space?** Ubuntu leaves ~137 GB free in `ubuntu-vg` for advanced users who want LVM snapshots before OS upgrades or separate logical volumes.
+**Why leave unallocated space?** Ubuntu leaves ~137 GB free in `ubuntu-vg` for advanced users who want LVM snapshots before OS upgrades or separate logical volumes.
 
 **Recommendation for a 240 GB Home Server:**
 
@@ -133,14 +133,14 @@ sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
 2. Select **Use An Entire Disk** with default LVM options (or edit `ubuntu-lv` size to `max` to avoid the 100 GB cap).
 3. Select **OpenSSH Server** when prompted during the installer package step.
 4. Complete the installation, remove USB installation media, and reboot into your fresh server terminal.
-5. **Initial System Update & Essential Tools:** Log in and run an immediate system package refresh and install essential CLI editing tools (`nano`, `curl`, `git`, `htop`):
+5. **Initial System Update & Essential Tools:** Log in and run an immediate system package refresh and install essential CLI editing tools (`nano`, `curl`, `git`, `btop`):
 
    ```bash
    # Refresh package index and apply latest security upgrades
    sudo apt update && sudo apt upgrade -y
 
    # Install essential editing, retrieval, and monitoring packages
-   sudo apt install -y nano curl git htop net-tools
+   sudo apt install -y nano curl git btop
    ```
 
 </Steps>
@@ -323,12 +323,30 @@ sudo ufw enable
 
 #### Optional: Web-Based Management (Cockpit)
 
-If you prefer a web GUI dashboard for server metrics and terminal access:
+If you prefer a web GUI dashboard for server metrics, software updates, and terminal access:
 
 ```bash
-sudo apt install cockpit
+# Install Cockpit, PackageKit update integration, and enable service socket
+sudo apt install -y cockpit cockpit-packagekit packagekit
 sudo systemctl enable --now cockpit.socket
 sudo ufw allow 9090/tcp comment 'Cockpit Web Dashboard'
 ```
 
 Access Cockpit at `https://192.168.1.xxx:9090`.
+
+<Aside type="caution" title="Troubleshooting Cockpit: 'Cannot refresh cache whilst offline'">
+  <p><Badge text="Gotcha" variant="danger" /> Cockpit Software Updates tab reports: <em>Loading available updates failed — Cannot refresh cache whilst offline</em>.</p>
+
+**Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. Cockpit's PackageKit update module queries NetworkManager for online status and falsely assumes the system is offline because NetworkManager is not handling the interface.
+
+**Fix:** Run `pkcon refresh force` in terminal to force PackageKit to sync cache, then restart the PackageKit service:
+
+```bash
+# Force PackageKit to sync cache and restart daemon
+sudo pkcon refresh force
+sudo systemctl restart packagekit
+```
+
+Reload the Cockpit web page in your browser.
+
+</Aside>
