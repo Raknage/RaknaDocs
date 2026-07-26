@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
 <Aside type="note" title="Layer Contract Card">
   <p>
@@ -127,10 +127,10 @@ Create the override file with your Cloudflare API token:
 sudo mkdir -p /etc/systemd/system/caddy.service.d
 
 # Write systemd override file (ensure [Service] is on Line 1)
-sudo tee /etc/systemd/system/caddy.service.d/override.conf <<EOF
+sudo nano /etc/systemd/system/caddy.service.d/override.conf
+
 [Service]
 Environment="CLOUDFLARE_API_TOKEN=cfut_your_actual_token_here"
-EOF
 ```
 
 Reload systemd daemon and restart Caddy service:
@@ -139,6 +139,85 @@ Reload systemd daemon and restart Caddy service:
 sudo systemctl daemon-reload
 sudo systemctl restart caddy
 ```
+
+---
+
+### 4. Dynamic DNS (DDNS): Auto-Updating Cloudflare IP
+
+Residential ISPs dynamically change your home router's public IPv4 address periodically. To ensure your domain always points to your server's current IP address, configure automated Dynamic DNS (DDNS).
+
+<Aside type="note" title="Cloudflare Tunnels Bypass DDNS Completely">
+  If you choose <strong>Alternative Branch 2 (Cloudflare Zero-Trust Tunnels)</strong> below, you do{" "}
+  <strong>NOT</strong> need DDNS! Cloudflare Tunnels establish outbound daemon tunnels directly to
+  Cloudflare's edge, eliminating the need for public IP DNS records or open router ports.
+</Aside>
+
+<Tabs>
+  <TabItem label="Option A: Native Bash Script + Cron (Zero Dependencies)">
+
+Create a lightweight script at `/usr/local/bin/cloudflare-ddns.sh`:
+
+```bash
+sudo nano /usr/local/bin/cloudflare-ddns.sh
+```
+
+Paste the following (replace `ZONE_ID`, `RECORD_ID`, and `API_TOKEN`):
+
+```bash
+#!/usr/bin/env bash
+ZONE_ID="your_cloudflare_zone_id"
+RECORD_ID="your_dns_record_id"
+RECORD_NAME="app.yourdomain.com"
+API_TOKEN="cfut_your_api_token"
+
+# Fetch current public IPv4 address
+CURRENT_IP=$(curl -s https://api.ipify.org)
+
+# Update Cloudflare A record
+curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
+     -H "Authorization: Bearer ${API_TOKEN}" \
+     -H "Content-Type: application/json" \
+     --data "{\"type\":\"A\",\"name\":\"${RECORD_NAME}\",\"content\":\"${CURRENT_IP}\",\"ttl\":1,\"proxied\":true}"
+```
+
+Make the script executable and schedule it to run every 5 minutes:
+
+```bash
+sudo chmod +x /usr/local/bin/cloudflare-ddns.sh
+
+# Open root crontab
+sudo crontab -e
+
+# Add cron job to run every 5 minutes
+*/5 * * * * /usr/local/bin/cloudflare-ddns.sh > /dev/null 2>&1
+```
+
+  </TabItem>
+
+  <TabItem label="Option B: Dockerized Cloudflare DDNS (Recommended)">
+
+If you deploy apps via Docker Compose, run the popular `favonia/cloudflare-ddns` container to automatically sync your public IP:
+
+```yaml
+services:
+  cloudflare-ddns:
+    image: favonia/cloudflare-ddns:latest
+    container_name: cloudflare-ddns
+    restart: always
+    environment:
+      - CLOUDFLARE_API_TOKEN=cfut_your_api_token
+      - DOMAINS=app.yourdomain.com,*.yourdomain.com
+      - PROXIED=true
+```
+
+Run the container:
+
+```bash
+docker compose up -d
+```
+
+  </TabItem>
+</Tabs>
 
 ---
 
