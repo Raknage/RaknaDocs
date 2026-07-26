@@ -116,6 +116,19 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
       sudo systemctl daemon-reload
       sudo mount -a
       ```
+
+      > 💡 **Missing Home Directory (`Could not chdir to home directory /home/username`):** If mounting `@home` leaves your user home directory missing (because Ubuntu installed the initial user profile under `@/home/username` on the root subvolume), copy the initial profile from the root pool into the new `@home` subvolume:
+      > ```bash
+      > # Mount top-level pool to /mnt
+      > sudo mount -o subvolid=5 /dev/sda3 /mnt   # Replace /dev/sda3 with your BTRFS partition
+      >
+      > # Copy original user home directory from root subvol (@) into home subvol (@home)
+      > sudo cp -a /mnt/@/home/$USER /mnt/@home/
+      > sudo chown -R $USER:$USER /mnt/@home/$USER
+      >
+      > # Unmount top-level pool
+      > sudo umount /mnt
+      > ```
     </Aside>
 
   </TabItem>
