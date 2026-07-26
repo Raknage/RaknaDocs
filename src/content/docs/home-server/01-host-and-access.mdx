@@ -70,7 +70,9 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
       sudo mkdir -p /srv/www /srv/docker /srv/postgres /.snapshots
       ```
 
-      > ⚠️ **Subvolume Existence Error (`No such file or directory`):** If `sudo mount -a` reports `mount() failed: No such file or directory`, the subvolume does not exist inside your BTRFS pool yet. Mount the top-level pool (`subvolid=5`) and create missing subvolumes:
+      > ⚠️ **Mount Point Error (`mount point does not exist`):** If `sudo mount -a` returns `mount point does not exist`, the target directory on your root filesystem was missing when `mount` ran. Run `sudo mkdir -p /srv/www /srv/docker /srv/postgres /.snapshots` to create the target folders before mounting.
+      >
+      > ⚠️ **Subvolume Existence Error (`No such file or directory`):** If `sudo mount -a` reports `mount() failed: No such file or directory`, the directory exists but the subvolume does not exist inside your BTRFS pool yet. Mount the top-level pool (`subvolid=5`) and create missing subvolumes:
       > ```bash
       > # Mount top-level BTRFS pool to /mnt
       > sudo mount -o subvolid=5 /dev/sda3 /mnt   # Replace /dev/sda3 with your BTRFS partition
