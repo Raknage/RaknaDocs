@@ -45,16 +45,49 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
     └── subvol=@log             → Mounted at /var/log (System logs & journalctl)
     ```
 
-    <Aside type="tip" title="BTRFS Transparent Compression & fstab Mount Options">
-      BTRFS supports transparent background file compression (`compress=zstd:1`), which reduces disk usage by 20–40% while extending SSD lifespan by reducing total bytes written.
+    <Aside type="tip" title="Finding Drive UUIDs & Configuring /etc/fstab">
+      BTRFS supports transparent background file compression (`compress=zstd:1`), which reduces disk space usage by 20–40% while extending SSD lifespan by reducing total disk write cycles.
 
-      Edit `/etc/fstab` to include recommended mount options:
+      #### Step 1: Find your partition's UUID
+      Run either `sudo blkid` or `lsblk -f` in your terminal to inspect block device UUIDs:
+
+      ```bash
+      # Display filesystem types and UUIDs for all partitions
+      sudo blkid
+
+      # Alternatively, view a tree list of disks and UUIDs
+      lsblk -f
+      ```
+
+      *Example `blkid` output:*
+      `/dev/sda3: UUID="3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" TYPE="btrfs"`
+
+      > 💡 **BTRFS Subvolume Rule:** All subvolumes (`@`, `@home`, `@data`, `@log`) on the same physical partition share the **exact same UUID**. You differentiate subvolumes in `/etc/fstab` using the `subvol=` option.
+
+      #### Step 2: Edit `/etc/fstab`
+      Open `/etc/fstab` in `nano`:
+
+      ```bash
+      sudo nano /etc/fstab
+      ```
+
+      Add or update entries using your real UUID copied from `sudo blkid`:
+
       ```ini
       # /etc/fstab BTRFS mount entries
-      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /          btrfs defaults,noatime,compress=zstd:1,subvol=@ 0 0
-      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /home      btrfs defaults,noatime,compress=zstd:1,subvol=@home 0 0
-      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/data  btrfs defaults,noatime,compress=zstd:1,subvol=@data 0 0
-      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/log   btrfs defaults,noatime,compress=zstd:1,subvol=@log 0 0
+      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /          btrfs defaults,noatime,compress=zstd:1,subvol=@     0 0
+      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /home      btrfs defaults,noatime,compress=zstd:1,subvol=@home 0 0
+      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /var/data  btrfs defaults,noatime,compress=zstd:1,subvol=@data 0 0
+      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /var/log   btrfs defaults,noatime,compress=zstd:1,subvol=@log  0 0
+      ```
+
+      #### Step 3: Verify `/etc/fstab` syntax before rebooting
+      To ensure there are no typos in `/etc/fstab` that could prevent your server from booting:
+
+      ```bash
+      # Reload systemd daemon and test all fstab mount entries
+      sudo systemctl daemon-reload
+      sudo mount -a
       ```
     </Aside>
 
@@ -113,9 +146,6 @@ Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash t
    ```bash
    # Refresh package index and apply latest security upgrades
    sudo apt update && sudo apt upgrade -y
-
-   # Install essential editing, retrieval, and monitoring packages
-   sudo apt install -y nano curl git btop btrfs-progs
    ```
 
 </Steps>
@@ -123,7 +153,7 @@ Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash t
 # Install essential editing, retrieval, and monitoring packages
 
 ```bash
-sudo apt install -y nano curl git btop
+   sudo apt install -y nano curl git btop btrfs-progs tmux
 ```
 
 #### 🛠️ Essential `apt` Package Manager Cheat Sheet
