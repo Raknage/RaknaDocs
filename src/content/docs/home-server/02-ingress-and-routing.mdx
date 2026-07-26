@@ -217,6 +217,50 @@ docker compose up -d
 ```
 
   </TabItem>
+
+  <TabItem label="Option C: Native System Daemon (ddclient)">
+
+`ddclient` is a classic, lightweight background Linux service that manages DDNS updates automatically without requiring Docker or custom bash scripts.
+
+1. **Install `ddclient`:**
+
+   ```bash
+   sudo apt update && sudo apt install -y ddclient
+   ```
+
+2. **Configure `/etc/ddclient.conf`:**
+
+   ```bash
+   sudo nano /etc/ddclient.conf
+   ```
+
+   Paste the following configuration (replace `yourdomain.com` and `cfut_your_api_token`):
+
+   ```ini
+   daemon=300                          # Check IP every 300 seconds (5 minutes)
+   syslog=yes                          # Log update activity to syslog
+   pid=/var/run/ddclient.pid
+   ssl=yes
+   use=web, web=https://api.ipify.org  # IP discovery web service
+
+   protocol=cloudflare
+   zone=yourdomain.com
+   login=token                         # Instructs ddclient to use Cloudflare API Token
+   password=cfut_your_api_token
+   app.yourdomain.com, *.yourdomain.com
+   ```
+
+3. **Restart Service & Test Sync Output:**
+
+   ```bash
+   # Restart background systemd daemon
+   sudo systemctl restart ddclient
+
+   # Force an immediate dry-run update to inspect debug logs
+   sudo ddclient -verbose -noquiet
+   ```
+
+  </TabItem>
 </Tabs>
 
 ---
