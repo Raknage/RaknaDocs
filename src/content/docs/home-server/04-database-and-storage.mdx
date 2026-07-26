@@ -26,16 +26,37 @@ Running database engines inside Docker containers with host-bound volume mounts 
 
 ### 1. PostgreSQL Container with Host Volume Mount
 
-Create your persistent database host directory:
+<Aside type="caution" title="BTRFS Copy-on-Write (CoW) & Database Storage Performance">
+  <p><Badge text="Critical Performance Gotcha" variant="danger" /> Default BTRFS Copy-on-Write (CoW) causes severe database file fragmentation and write latency!</p>
+
+Because database engines (PostgreSQL, MariaDB, SQLite) perform heavy random 8KB page writes to data files, BTRFS Copy-on-Write forces modified blocks to be written to new locations on disk. Over time, this leads to **extreme disk fragmentation** and write performance degradation.
+
+**The Solution (NOCOW / `chattr +C`):**
+Disable Copy-on-Write (`NOCOW`) on your database storage directories **BEFORE** creating database files or launching database containers.
+
+```bash
+# 1. Create empty host database directory
+sudo mkdir -p /var/data/postgres
+
+# 2. Disable Copy-on-Write (+C flag) BEFORE populating files
+sudo chattr +C /var/data/postgres
+
+# 3. Verify NOCOW attribute (+C is active)
+lsattr -d /var/data/postgres
+# Expected output: ---------------C------ /var/data/postgres
+```
+
+> ⚠️ _Important ([Arch Wiki Btrfs Guide](<https://wiki.archlinux.org/title/Btrfs#Copy-on-Write_(CoW)>)): `chattr +C` ONLY takes effect when executed on an **EMPTY directory** BEFORE files are created. Setting `chattr +C` on an existing folder with files does NOT disable CoW for those existing files.\_
+
+</Aside>
+
+Create your persistent NOCOW database directory and start PostgreSQL 16 container:
 
 ```bash
 sudo mkdir -p /var/data/postgres
+sudo chattr +C /var/data/postgres
 sudo chown -R $USER:$USER /var/data/postgres
-```
 
-Run PostgreSQL 16 container:
-
-```bash
 docker run -d \
   --name postgres-db \
   --restart always \
@@ -53,6 +74,8 @@ docker run -d \
 
 ```bash
 sudo mkdir -p /var/data/mariadb
+sudo chattr +C /var/data/mariadb
+sudo chown -R $USER:$USER /var/data/mariadb
 
 docker run -d \
   --name mariadb-db \

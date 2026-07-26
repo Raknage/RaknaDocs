@@ -30,47 +30,53 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
 - **Disable C-States / Deep Sleep (Optional):** If repurposing legacy laptop hardware, disable CPU aggressive C-states to prevent sleep states from dropping network connections.
 - **Thermal Maintenance:** Clean dust filters and replace thermal paste on legacy hardware.
 
-### 2. Disk Storage & Partitioning Layout
+### 2. Disk Storage & Partitioning Layout (BTRFS)
 
 <Tabs>
-  <TabItem label="Single 240 GB SSD Setup (Recommended)">
-    For a streamlined home server running on a single 240 GB SSD drive, use Ubuntu Server's default guided LVM / ext4 layout. All system binaries, Docker volumes, databases, and project repositories reside on the single root partition:
+  <TabItem label="Single 240 GB SSD Setup (BTRFS Recommended)">
+    For a modern, resilient home server running on a single 240 GB SSD drive, **BTRFS** is the recommended filesystem. BTRFS uses **subvolumes** sharing a single storage pool, enabling instant Copy-on-Write (CoW) system snapshots, dynamic disk space allocation, and transparent `zstd` compression:
 
     ```bash
-    /                           → 240 GB SSD Root Partition (OS, packages, configuration)
-    ├── /home                   → Developer projects, git repos, user configuration
-    ├── /var/lib/docker         → Docker container images, layer caches, and container runtime state
-    ├── /var/data               → Persistent host database volumes (PostgreSQL, MariaDB)
-    └── /var/log                → Systemd journalctl logs and service application logs
+    /                           → BTRFS Root Pool (240 GB SSD)
+    ├── subvol=@                → Mounted at / (OS root, packages, configuration)
+    ├── subvol=@home            → Mounted at /home (User projects, repositories, developer configs)
+    ├── subvol=@docker          → Mounted at /var/lib/docker (Docker layer caches & runtime containers)
+    ├── subvol=@data            → Mounted at /var/data (Persistent database volumes & app storage)
+    └── subvol=@log             → Mounted at /var/log (System logs & journalctl)
     ```
 
-    <Aside type="tip" title="ext4 Reserved Block Tuning (Post-Installation)">
-      By default, ext4 reserves 5% of drive space (~12 GB on a 240 GB SSD) for the root user. **After installation completes and you boot into your server**, run `tune2fs` to reduce this reserved space to 1% and instantly reclaim ~9.6 GB of usable SSD storage:
-      ```bash
-      # Run on your installed system via terminal / SSH
-      sudo tune2fs -m 1 /dev/sda3   # Replace /dev/sda3 with your root partition (e.g. /dev/nvme0n1p3)
+    <Aside type="tip" title="BTRFS Transparent Compression & fstab Mount Options">
+      BTRFS supports transparent background file compression (`compress=zstd:1`), which reduces disk usage by 20–40% while extending SSD lifespan by reducing total bytes written.
+
+      Edit `/etc/fstab` to include recommended mount options:
+      ```ini
+      # /etc/fstab BTRFS mount entries
+      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /          btrfs defaults,noatime,compress=zstd:1,subvol=@ 0 0
+      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /home      btrfs defaults,noatime,compress=zstd:1,subvol=@home 0 0
+      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/data  btrfs defaults,noatime,compress=zstd:1,subvol=@data 0 0
+      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/log   btrfs defaults,noatime,compress=zstd:1,subvol=@log 0 0
       ```
     </Aside>
 
   </TabItem>
 
   <TabItem label="Multi-SSD / Dedicated Storage Drive Setup">
-    If your home server has multiple physical SSDs or dedicated data drives, isolate the OS boot drive from high-I/O database and Docker volume storage:
+    If your home server has multiple physical SSDs or dedicated data drives, mount separate BTRFS pools or subvolumes for isolated storage:
 
     ```bash
-    /           → 120 GB SSD 1  (OS root, system packages, base configuration)
-    /home       → 240 GB SSD 2  (User projects, repositories, developer assets)
-    /var/data   → 500 GB SSD 3  (Dedicated high-speed database clusters & Docker volumes)
+    /           → 120 GB SSD 1 (BTRFS OS root subvol=@)
+    /home       → 240 GB SSD 2 (BTRFS Developer assets subvol=@home)
+    /var/data   → 500 GB SSD 3 (Dedicated BTRFS Database & Docker volume drive)
     ```
 
-    <Aside type="tip" title="Multi-Drive ext4 Mounts & fstab">
-      Format dedicated secondary data drives as ext4 and mount them via `/etc/fstab` using UUIDs to prevent drive letter shifts on reboot:
+    <Aside type="tip" title="Multi-Drive BTRFS Mounts & fstab">
+      Format dedicated secondary data drives as BTRFS and mount them via `/etc/fstab` using UUIDs:
       ```bash
-      # Find drive UUID
+      # Find secondary drive UUID
       sudo blkid /dev/sdb1
 
-      # Add entry to /etc/fstab
-      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/data ext4 defaults,noatime 0 2
+      # Add entry to /etc/fstab with zstd compression
+      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/data btrfs defaults,noatime,compress=zstd:1 0 0
       ```
     </Aside>
 
@@ -96,41 +102,10 @@ Download the official **Ubuntu Server LTS ISO** (e.g. 24.04 / 26.04) and flash t
   <code>fallocate -l 4G /swapfile</code>) without needing disk repartitioning.
 </Aside>
 
-<Aside type="caution" title="Understanding Ubuntu Default LVM & The 100GB Root Limit">
-  <Badge text="Gotcha" variant="danger" /> By default, Ubuntu Server installer caps root (<code>/</code>) at <strong>100 GB</strong> regardless of SSD size!
-
-When installing Ubuntu Server on a 240 GB SSD, the installer creates 3 default partitions:
-
-- `/boot/efi` (1 GB): UEFI bootloader partition (FAT32) required by modern motherboards.
-- `/boot` (2 GB): Stores Linux kernels (`vmlinuz`) and boot system files.
-- `ubuntu-vg/ubuntu-lv` mounted at `/` (100 GB): Logical Volume for your OS & files.
-
-**Why leave unallocated space?** Ubuntu leaves ~137 GB free in `ubuntu-vg` for advanced users who want LVM snapshots before OS upgrades or separate logical volumes.
-
-**Recommendation for a 240 GB Home Server:**
-
-<Badge text="Recommended" variant="success" /> **Expand to 100% (max)!** 240 GB is a modest drive
-size. Docker layer caches, databases, and logs will quickly fill a 100 GB limit. Expand to `max` so
-all space is available under root `/`. **Only keep unallocated space if:** You specifically plan to
-use LVM instant snapshots (`sudo lvcreate --snapshot`) before risky kernel/OS upgrades.
-
-**How to expand root to use full 240 GB SSD space:**
-
-**During Install:** On the guided storage screen, select `ubuntu-lv`, edit size, and change to `max` or `100%`.
-**Post-Install (Single Command):** If you already installed with 100 GB default, run this in terminal to instantly expand root to full disk size without rebooting:
-
-```bash
-# Expand LVM logical volume and resize ext4 filesystem to 100% free space
-sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
-sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
-```
-
-</Aside>
-
 <Steps>
 
 1. Boot from the installer USB and select **Ubuntu Server (Minimal)** for a clean, lightweight server baseline.
-2. Select **Use An Entire Disk** with default LVM options (or edit `ubuntu-lv` size to `max` to avoid the 100 GB cap).
+2. On the Guided Storage screen, select **Custom Storage Layout** (or guided disk layout), format the primary system partition as **Btrfs**, and create your desired subvolumes (`@`, `@home`, `@data`).
 3. Select **OpenSSH Server** when prompted during the installer package step.
 4. Complete the installation, remove USB installation media, and reboot into your fresh server terminal.
 5. **Initial System Update & Essential Tools:** Log in and run an immediate system package refresh and install essential CLI editing tools (`nano`, `curl`, `git`, `btop`):
@@ -140,10 +115,16 @@ sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
    sudo apt update && sudo apt upgrade -y
 
    # Install essential editing, retrieval, and monitoring packages
-   sudo apt install -y nano curl git btop
+   sudo apt install -y nano curl git btop btrfs-progs
    ```
 
 </Steps>
+
+# Install essential editing, retrieval, and monitoring packages
+
+```bash
+sudo apt install -y nano curl git btop
+```
 
 #### 🛠️ Essential `apt` Package Manager Cheat Sheet
 
