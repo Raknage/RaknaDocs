@@ -33,7 +33,7 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
 ### 2. Disk Storage & Partitioning Layout (BTRFS)
 
 <Tabs>
-  <TabItem label="Single 240 GB SSD Setup (BTRFS Recommended)">
+  <TabItem label="Single 240 GB SSD Setup (BTRFS)">
     For a modern, resilient home server running on a single 240 GB SSD drive, **BTRFS** is the recommended filesystem. BTRFS uses **subvolumes** sharing a single storage pool, enabling instant Copy-on-Write (CoW) system snapshots, dynamic disk space allocation, and transparent `zstd` compression:
 
     ```bash
@@ -62,9 +62,31 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
       *Example `blkid` output:*
       `/dev/sda3: UUID="3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" TYPE="btrfs"`
 
-      > 💡 **BTRFS Subvolume Rule:** All subvolumes (`@`, `@home`, `@data`, `@log`) on the same physical partition share the **exact same UUID**. You differentiate subvolumes in `/etc/fstab` using the `subvol=` option.
+      > 💡 **BTRFS Subvolume Rule:** All subvolumes (`@`, `@home`, `@data`, `@log`) on the same physical partition share the **exact same UUID**. You differentiate subv      #### Step 2: Create Target Mount Directories & BTRFS Subvolumes
+      Linux requires target mount directories to exist on disk. Create any missing mount points:
 
-      #### Step 2: Edit `/etc/fstab`
+      ```bash
+      # Create target mount point directories
+      sudo mkdir -p /srv/www /srv/docker /srv/postgres /.snapshots
+      ```
+
+      > ⚠️ **Subvolume Existence Error (`No such file or directory`):** If `sudo mount -a` reports `mount() failed: No such file or directory`, the subvolume does not exist inside your BTRFS pool yet. Mount the top-level pool (`subvolid=5`) and create missing subvolumes:
+      > ```bash
+      > # Mount top-level BTRFS pool to /mnt
+      > sudo mount -o subvolid=5 /dev/sda3 /mnt   # Replace /dev/sda3 with your BTRFS partition
+      >
+      > # Create missing subvolumes
+      > sudo btrfs subvolume create /mnt/@home
+      > sudo btrfs subvolume create /mnt/@www
+      > sudo btrfs subvolume create /mnt/@docker
+      > sudo btrfs subvolume create /mnt/@postgres
+      > sudo btrfs subvolume create /mnt/@snapshots
+      >
+      > # Unmount top-level pool
+      > sudo umount /mnt
+      > ```
+
+      #### Step 3: Edit `/etc/fstab`
       Open `/etc/fstab` in `nano`:
 
       ```bash
@@ -75,13 +97,16 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
 
       ```ini
       # /etc/fstab BTRFS mount entries
-      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /          btrfs defaults,noatime,compress=zstd:1,subvol=@     0 0
-      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /home      btrfs defaults,noatime,compress=zstd:1,subvol=@home 0 0
-      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /var/data  btrfs defaults,noatime,compress=zstd:1,subvol=@data 0 0
-      UUID=3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d /var/log   btrfs defaults,noatime,compress=zstd:1,subvol=@log  0 0
+      #              <file system>               <mount point>  <type>  <options>                                <dump><pass>
+      UUID=68aeee9a-fe50-4bb0-b4ee-93dd17b8295b  /              btrfs  defaults,noatime,compress=zstd:3,subvol=@          0 0
+      UUID=68aeee9a-fe50-4bb0-b4ee-93dd17b8295b  /home          btrfs  defaults,noatime,compress=zstd:3,subvol=@home      0 0
+      UUID=68aeee9a-fe50-4bb0-b4ee-93dd17b8295b  /srv/www       btrfs  defaults,noatime,compress=zstd:3,subvol=@www       0 0
+      UUID=68aeee9a-fe50-4bb0-b4ee-93dd17b8295b  /srv/docker    btrfs  defaults,noatime,compress=zstd:3,subvol=@docker    0 0
+      UUID=68aeee9a-fe50-4bb0-b4ee-93dd17b8295b  /srv/postgres  btrfs  defaults,noatime,compress=zstd:3,subvol=@postgres  0 0
+      UUID=68aeee9a-fe50-4bb0-b4ee-93dd17b8295b  /.snapshots    btrfs  defaults,noatime,compress=zstd:3,subvol=@snapshots 0 0
       ```
 
-      #### Step 3: Verify `/etc/fstab` syntax before rebooting
+      #### Step 4: Verify `/etc/fstab` syntax before rebooting
       To ensure there are no typos in `/etc/fstab` that could prevent your server from booting:
 
       ```bash
