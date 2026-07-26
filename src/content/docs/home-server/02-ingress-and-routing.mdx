@@ -77,10 +77,9 @@ sudo chmod +x /usr/bin/caddy
 
 ### 3. Caddyfile Configuration
 
-Create `/etc/caddy/Caddyfile`:
+Edit `/etc/caddy/Caddyfile`:
 
 ```bash
-sudo mkdir /etc/caddy/
 sudo nano /etc/caddy/Caddyfile
 ```
 
@@ -102,7 +101,7 @@ app.yourdomain.com {
 
 # static site
 site.yourdomain.com {
-    root * /srv/www/raknage.com
+    root * /srv/www/site
     file_server
     encode gzip
 }
@@ -248,19 +247,19 @@ docker compose up -d
 
    Paste the following configuration (replace `yourdomain.com` and `cfut_your_api_token`):
 
-```ini
-daemon=300                          # Check IP every 300 seconds (5 minutes)
-syslog=yes                          # Log update activity to syslog
-pid=/var/run/ddclient.pid
-ssl=yes
-use=web, web=ipify-ipv4  # IP discovery web service
+   ```ini
+   daemon=300                          # Check IP every 300 seconds (5 minutes)
+   syslog=yes                          # Log update activity to syslog
+   pid=/var/run/ddclient.pid
+   ssl=yes
+   use=web, web=ipify-ipv4  # IP discovery web service
 
-protocol=cloudflare
-zone=yourdomain.com
-login=token                         # Instructs ddclient to use Cloudflare API Token
-password=cfut_your_api_token
-app.yourdomain.com, *.yourdomain.com
-```
+   protocol=cloudflare
+   zone=yourdomain.com
+   login=token                         # Instructs ddclient to use Cloudflare API Token
+   password=cfut_your_api_token
+   app.yourdomain.com, *.yourdomain.com
+   ```
 
 3. **Restart Service & Test Sync Output:**
 
