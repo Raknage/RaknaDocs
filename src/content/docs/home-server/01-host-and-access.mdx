@@ -60,9 +60,9 @@ Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to e
       ```
 
       *Example `blkid` output:*
-      `/dev/sda3: UUID="3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" TYPE="btrfs"`
+      > 💡 **BTRFS Subvolume Rule:** All subvolumes (`@`, `@home`, `@data`, `@log`) on the same physical partition share the **exact same UUID**. You differentiate subvolumes in `/etc/fstab` using the `subvol=` option.
 
-      > 💡 **BTRFS Subvolume Rule:** All subvolumes (`@`, `@home`, `@data`, `@log`) on the same physical partition share the **exact same UUID**. You differentiate subv      #### Step 2: Create Target Mount Directories & BTRFS Subvolumes
+      #### Step 2: Create Target Mount Directories & BTRFS Subvolumes
       Linux requires target mount directories to exist on disk. Create any missing mount points:
 
       ```bash
