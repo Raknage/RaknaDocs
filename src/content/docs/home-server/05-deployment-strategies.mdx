@@ -54,7 +54,7 @@ services:
       - POSTGRES_PASSWORD=securepassword
       - POSTGRES_DB=appdb
     volumes:
-      - /var/data/postgres:/var/lib/postgresql/data
+      - /srv/postgres:/var/lib/postgresql/data
     networks:
       - internal
 

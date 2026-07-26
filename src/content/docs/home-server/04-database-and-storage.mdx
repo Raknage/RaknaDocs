@@ -20,6 +20,32 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ---
 
+## 📊 Architectural Comparison: Docker Container vs. Bare-Metal Database
+
+Before choosing your deployment model, consider the trade-offs:
+
+| Feature / Consideration    | 🐳 Containerized Database (Docker Volume)                                          | 🖥️ Bare-Metal Database (`apt`)                                      |
+| :------------------------- | :--------------------------------------------------------------------------------- | :------------------------------------------------------------------ |
+| **Setup & Isolation**      | **Best:** Zero host package pollution; isolated in Docker container.               | **Complex:** Scatters files across `/var/lib`, `/etc`, `/usr/lib`.  |
+| **Version Upgrades**       | **Instant:** Change image tag (`postgres:16` → `postgres:17`).                     | **Manual:** Tied to Ubuntu `apt` repo releases; manual migration.   |
+| **Multi-Instance Support** | **Trivial:** Run Postgres 15, 16, and PGVector on different ports.                 | **Complex:** Requires manual cluster creation (`pg_createcluster`). |
+| **Compose Integration**    | **Native:** Boot app + DB + Redis together in 1 `docker-compose.yml`.              | **Separate:** Database managed outside Compose stack.               |
+| **Disk I/O Overhead**      | **Zero Impact:** Host volume mount (`-v /srv/postgres:...`) bypasses Docker layer. | **Zero Impact:** Native host disk write performance.                |
+| **System Boot Order**      | Requires Docker daemon (`dockerd`) to be active.                                   | Starts immediately during early systemd boot.                       |
+
+<Aside type="tip" title="Do I store the actual data in the same place in either case?">
+  **YES! Absolutely.**
+  
+  Whether running PostgreSQL inside Docker or natively on bare metal, **the actual database data files are stored in the exact same directory on your host SSD**:
+  - **In Docker:** You pass a host volume mount: `-v /srv/postgres:/var/lib/postgresql/data`.
+  - **In Bare Metal:** You set `data_directory = '/srv/postgres'` in `/etc/postgresql/16/main/postgresql.conf`.
+
+In both setups, data files reside in **`/srv/postgres`** on your BTRFS `@postgres` subvolume with `chattr +C` (NOCOW) enabled.
+
+</Aside>
+
+---
+
 ## 🌟 Recommended Default Track: Containerized Database via Docker Volumes
 
 Running database engines inside Docker containers with host-bound volume mounts provides simple upgrading, clean isolation, and zero host pollution.
@@ -36,26 +62,26 @@ Disable Copy-on-Write (`NOCOW`) on your database storage directories **BEFORE** 
 
 ```bash
 # 1. Create empty host database directory
-sudo mkdir -p /var/data/postgres
+sudo mkdir -p /srv/postgres
 
 # 2. Disable Copy-on-Write (+C flag) BEFORE populating files
-sudo chattr +C /var/data/postgres
+sudo chattr +C /srv/postgres
 
 # 3. Verify NOCOW attribute (+C is active)
-lsattr -d /var/data/postgres
-# Expected output: ---------------C------ /var/data/postgres
+lsattr -d /srv/postgres
+# Expected output: ---------------C------ /srv/postgres
 ```
 
-> ⚠️ _Important ([Arch Wiki Btrfs Guide](<https://wiki.archlinux.org/title/Btrfs#Copy-on-Write_(CoW)>)): `chattr +C` ONLY takes effect when executed on an **EMPTY directory** BEFORE files are created. Setting `chattr +C` on an existing folder with files does NOT disable CoW for those existing files.\_
+> ⚠️ _Important ([Arch Wiki Btrfs Guide](https://wiki.archlinux.org/title/Btrfs#Copy-on-Write_(CoW))): `chattr +C` ONLY takes effect when executed on an **EMPTY directory** BEFORE files are created. Setting `chattr +C` on an existing folder with files does NOT disable CoW for those existing files.\_
 
 </Aside>
 
 Create your persistent NOCOW database directory and start PostgreSQL 16 container:
 
 ```bash
-sudo mkdir -p /var/data/postgres
-sudo chattr +C /var/data/postgres
-sudo chown -R $USER:$USER /var/data/postgres
+sudo mkdir -p /srv/postgres
+sudo chattr +C /srv/postgres
+sudo chown -R $USER:$USER /srv/postgres
 
 docker run -d \
   --name postgres-db \
@@ -63,7 +89,7 @@ docker run -d \
   -e POSTGRES_USER=appuser \
   -e POSTGRES_PASSWORD=securepassword \
   -e POSTGRES_DB=appdb \
-  -v /var/data/postgres:/var/lib/postgresql/data \
+  -v /srv/postgres:/var/lib/postgresql/data \
   -p 5432:5432 \
   postgres:16-alpine
 ```
@@ -73,9 +99,9 @@ docker run -d \
 ### 2. MariaDB / MySQL Container
 
 ```bash
-sudo mkdir -p /var/data/mariadb
-sudo chattr +C /var/data/mariadb
-sudo chown -R $USER:$USER /var/data/mariadb
+sudo mkdir -p /srv/mariadb
+sudo chattr +C /srv/mariadb
+sudo chown -R $USER:$USER /srv/mariadb
 
 docker run -d \
   --name mariadb-db \
@@ -84,7 +110,7 @@ docker run -d \
   -e MYSQL_DATABASE=wordpress \
   -e MYSQL_USER=wpuser \
   -e MYSQL_PASSWORD=wppassword \
-  -v /var/data/mariadb:/var/lib/mysql \
+  -v /srv/mariadb:/var/lib/mysql \
   -p 3306:3306 \
   mariadb:11
 ```
