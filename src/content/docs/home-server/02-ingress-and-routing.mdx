@@ -36,7 +36,7 @@ To allow Caddy to request wildcard SSL certificates (`*.yourdomain.com`) without
    - `Zone - DNS - Edit` (Allows creating/deleting `_acme-challenge` TXT records)
    - `Zone - Zone - Read` (Allows Caddy to look up your domain's Zone ID)
 4. Under **Zone Resources**, select **Include → Specific zone → yourdomain.com**.
-5. Copy the generated API token (e.g. `CLOUDFLARE_API_TOKEN=cfut_xxx`).
+5. Copy the generated API token (e.g. `cfut_xxx`).
 
 </Steps>
 
@@ -86,24 +86,31 @@ sudo nano /etc/caddy/Caddyfile
 
 ```ini
 {
+    email asd@qwerty.com
     # Global options: Use Cloudflare DNS-01 challenge for all sites
     acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 }
 
-# Subdomain routing for main application
-app.yourdomain.com {
+yourdomain.com {
     reverse_proxy localhost:3000
 }
 
-# Subdomain routing for internal services / analytics
-analytics.yourdomain.com {
-    reverse_proxy localhost:8080
+# Subdomain routing
+app.yourdomain.com {
+    reverse_proxy localhost:3001
+}
+
+# static site
+site.yourdomain.com {
+    root * /srv/www/raknage.com
+    file_server
+    encode gzip
 }
 ```
 
 <Aside type="tip" title="Per-Site TLS Syntax Alternative">
   If you prefer defining DNS challenges per site instead of globally, use the `tls` block:
-  ```caddy
+  ```ini
   app.yourdomain.com {
       tls {
           dns cloudflare {env.CLOUDFLARE_API_TOKEN}
@@ -128,7 +135,9 @@ sudo mkdir -p /etc/systemd/system/caddy.service.d
 
 # Write systemd override file (ensure [Service] is on Line 1)
 sudo nano /etc/systemd/system/caddy.service.d/override.conf
+```
 
+```ini
 [Service]
 Environment="CLOUDFLARE_API_TOKEN=cfut_your_actual_token_here"
 ```
@@ -153,43 +162,46 @@ Residential ISPs dynamically change your home router's public IPv4 address perio
 </Aside>
 
 <Tabs>
-  <TabItem label="Option A: Native Bash Script + Cron (Zero Dependencies)">
+  <TabItem label="Option A: Native Bash Script + Cron (All A Records)">
 
-Create a lightweight script at `/usr/local/bin/cloudflare-ddns.sh`:
+Create a script at `/usr/local/bin/cloudflare-ddns.sh` that automatically queries Cloudflare for **all `A` records** under your zone (`domain.com`, `ssh.domain.com`, `*.domain.com`) and updates them dynamically:
 
 ```bash
 sudo nano /usr/local/bin/cloudflare-ddns.sh
 ```
 
-Paste the following (replace `ZONE_ID`, `RECORD_ID`, and `API_TOKEN`):
+Paste the following script (replace `ZONE_ID` and `API_TOKEN`):
 
 ```bash
 #!/usr/bin/env bash
+# Cloudflare Multi-Record DDNS Auto-Updater
 ZONE_ID="your_cloudflare_zone_id"
-RECORD_ID="your_dns_record_id"
-RECORD_NAME="app.yourdomain.com"
 API_TOKEN="cfut_your_api_token"
 
 # Fetch current public IPv4 address
 CURRENT_IP=$(curl -s https://api.ipify.org)
 
-# Update Cloudflare A record
-curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
+# Fetch all 'A' records for the zone and update each one
+curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?type=A" \
      -H "Authorization: Bearer ${API_TOKEN}" \
-     -H "Content-Type: application/json" \
-     --data "{\"type\":\"A\",\"name\":\"${RECORD_NAME}\",\"content\":\"${CURRENT_IP}\",\"ttl\":1,\"proxied\":true}"
+     -H "Content-Type: application/json" | \
+jq -r '.result[] | "\(.id) \(.name)"' | while read -r RECORD_ID RECORD_NAME; do
+    echo "Updating ${RECORD_NAME} (${RECORD_ID}) to ${CURRENT_IP}..."
+    curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
+         -H "Authorization: Bearer ${API_TOKEN}" \
+         -H "Content-Type: application/json" \
+         --data "{\"type\":\"A\",\"name\":\"${RECORD_NAME}\",\"content\":\"${CURRENT_IP}\",\"ttl\":1,\"proxied\":true}"
+done
 ```
 
-Make the script executable and schedule it to run every 5 minutes:
+Install `jq` (JSON parser), make the script executable, and schedule it via root cron:
 
 ```bash
+sudo apt install -y jq
 sudo chmod +x /usr/local/bin/cloudflare-ddns.sh
 
-# Open root crontab
-sudo crontab -e
-
 # Add cron job to run every 5 minutes
-*/5 * * * * /usr/local/bin/cloudflare-ddns.sh > /dev/null 2>&1
+(sudo crontab -l 2>/dev/null; echo "*/5 * * * * /usr/local/bin/cloudflare-ddns.sh > /dev/null 2>&1") | sudo crontab -
 ```
 
   </TabItem>
@@ -236,19 +248,19 @@ docker compose up -d
 
    Paste the following configuration (replace `yourdomain.com` and `cfut_your_api_token`):
 
-   ```ini
-   daemon=300                          # Check IP every 300 seconds (5 minutes)
-   syslog=yes                          # Log update activity to syslog
-   pid=/var/run/ddclient.pid
-   ssl=yes
-   use=web, web=https://api.ipify.org  # IP discovery web service
+```ini
+daemon=300                          # Check IP every 300 seconds (5 minutes)
+syslog=yes                          # Log update activity to syslog
+pid=/var/run/ddclient.pid
+ssl=yes
+use=web, web=ipify-ipv4  # IP discovery web service
 
-   protocol=cloudflare
-   zone=yourdomain.com
-   login=token                         # Instructs ddclient to use Cloudflare API Token
-   password=cfut_your_api_token
-   app.yourdomain.com, *.yourdomain.com
-   ```
+protocol=cloudflare
+zone=yourdomain.com
+login=token                         # Instructs ddclient to use Cloudflare API Token
+password=cfut_your_api_token
+app.yourdomain.com, *.yourdomain.com
+```
 
 3. **Restart Service & Test Sync Output:**
 
