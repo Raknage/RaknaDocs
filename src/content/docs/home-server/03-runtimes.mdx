@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps, Icon } from "@astrojs/starlight/components";
 
 <Aside type="note" title="Layer Contract Card">
   <p>
@@ -19,7 +19,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ---
 
-## 🌟 Recommended Default Track: Node.js via `fnm` (Fast Node Manager)
+## 🌟 Node.js via `fnm` (Fast Node Manager)
 
 `fnm` (Fast Node Manager) is a Rust-built, ultra-fast Node.js version manager. Unlike NVM, `fnm` does not slow down shell startup and provides automatic `.nvmrc` / `.node-version` switching on directory changes.
 
@@ -82,7 +82,7 @@ ExecStart=/home/toni/.local/share/fnm/current/bin/node /home/toni/my-app/server.
 
 ---
 
-## 🐍 Alternative Branch: Python Runtimes (`venv`)
+## 🐍 Python Runtimes (`venv`)
 
 To prevent contaminating system Python packages managed by Ubuntu `apt`, always use Python virtual environments (`venv`) for application dependencies.
 
@@ -112,6 +112,15 @@ Canonical binary path for systemd Python services:
 
 ```bash
 /home/toni/my-python-app/venv/bin/python
+```
+
+---
+
+## 🐹 Go installation
+
+```bash
+
+
 ```
 
 ---

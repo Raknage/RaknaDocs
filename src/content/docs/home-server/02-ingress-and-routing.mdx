@@ -30,13 +30,13 @@ To allow Caddy to request wildcard SSL certificates (`*.yourdomain.com`) without
 
 <Steps>
 
-1. Log into your Cloudflare Dashboard and navigate to **My Profile → API Tokens** (or **Manage Account → Account API Tokens**).
+1. Log into your Cloudflare Dashboard and navigate to **My Profile → API Tokens** (User API Tokens).
 2. Click **Create Token** and select the **Edit zone DNS** template.
 3. Verify that the token permissions include **both** required scopes:
    - `Zone - DNS - Edit` (Allows creating/deleting `_acme-challenge` TXT records)
    - `Zone - Zone - Read` (Allows Caddy to look up your domain's Zone ID)
 4. Under **Zone Resources**, select **Include → Specific zone → yourdomain.com**.
-5. Copy the generated API token (e.g. `CLOUDFLARE_API_TOKEN=cfat_xxxx`).
+5. Copy the generated API token (e.g. `CLOUDFLARE_API_TOKEN=cfut_xxx`).
 
 </Steps>
 
@@ -44,19 +44,28 @@ To allow Caddy to request wildcard SSL certificates (`*.yourdomain.com`) without
 
 ### 2. Caddy Build & Installation
 
-Standard pre-compiled Caddy binaries do not include DNS provider modules. Build Caddy with the official `github.com/caddy-dns/cloudflare` module using `xcaddy`:
+Standard pre-compiled Caddy binaries do not include DNS provider modules.
+
+To ensure systemd (`caddy.service`), permissions, and configuration directories (`/etc/caddy/`) are properly created, first install standard Caddy from official repositories, then build and replace the binary with the Cloudflare DNS module using `xcaddy`:
 
 ```bash
-# Install Go & xcaddy builder repository
+# 1. Install prerequisites
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+
+# 2. Add official Caddy apt repository & install standard Caddy (provisions caddy.service)
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install -y caddy
+
+# 3. Add xcaddy builder repository & install xcaddy with Go
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-xcaddy-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-xcaddy.list
 sudo apt update && sudo apt install -y xcaddy golang
 
-# Build custom Caddy binary with Cloudflare DNS plugin
+# 4. Build custom Caddy binary with Cloudflare DNS plugin
 xcaddy build --with github.com/caddy-dns/cloudflare
 
-# Replace system Caddy binary with plugin-enabled build
+# 5. Overwrite system Caddy binary with plugin-enabled build
 sudo mv caddy /usr/bin/caddy
 sudo chmod +x /usr/bin/caddy
 ```
@@ -67,7 +76,12 @@ sudo chmod +x /usr/bin/caddy
 
 Create `/etc/caddy/Caddyfile`:
 
-```caddy
+```bash
+sudo mkdir /etc/caddy/
+sudo nano /etc/caddy/Caddyfile
+```
+
+```ini
 {
     # Global options: Use Cloudflare DNS-01 challenge for all sites
     acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
