@@ -263,3 +263,64 @@ Add global exports:
 NODE_ENV="production"
 SERVER_REGION="helsinki-home"
 ```
+
+---
+
+## Docker
+
+<Aside type="caution" title="Docker and UFW">
+  When you publish a container's ports using Docker, traffic to and from that container gets
+  diverted before it goes through the ufw firewall settings. Docker routes container traffic in the
+  nat table, which means that packets are diverted before it reaches the INPUT and OUTPUT chains
+  that ufw uses. Packets are routed before the firewall rules can be applied, effectively ignoring
+  your firewall configuration.
+</Aside>
+
+Run the following command to uninstall all conflicting packages:
+
+```bash
+sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc | cut -f1)
+```
+
+<Steps>
+1. Set up Docker's apt repository.
+    
+    ```bash
+    # Add Docker's official GPG key:
+    sudo apt update
+    sudo apt install ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add the repository to Apt sources:
+
+    sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+    Types: deb
+    URIs: https://download.docker.com/linux/ubuntu
+    Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+    Components: stable
+    Architectures: $(dpkg --print-architecture)
+    Signed-By: /etc/apt/keyrings/docker.asc
+    EOF
+
+    sudo apt update
+    ```
+
+2. Install the Docker packages.
+
+   ```bash
+   sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+   ```
+
+3. Verify installation
+
+   ```bash
+   sudo systemctl status docker
+   ```
+
+   ```bash
+   sudo docker run hello-world
+   ```
+
+</Steps>
