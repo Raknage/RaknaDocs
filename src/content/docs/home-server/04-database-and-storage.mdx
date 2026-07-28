@@ -46,6 +46,25 @@ In both setups, data files reside in **`/srv/postgres`** on your BTRFS `@postgre
 
 ---
 
+## 📂 Server Directory Storage Matrix: What Goes Where?
+
+To ensure data persistence, clean backups, and optimal BTRFS performance, separate your storage locations by purpose:
+
+| Directory             | Purpose / Belongings                                                                                                     | Examples & Use Cases                                                       | BTRFS Mode                       |
+| :-------------------- | :----------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- | :------------------------------- |
+| **`/home/$USER`**     | **Developer Source Code & Tools:** Custom Git repositories, dotfiles, and SSH keys.                                      | `~/projects/my-app/`<br/>`~/.ssh/id_ed25519`                               | Standard CoW (`compress=zstd:3`) |
+| **`/srv/docker`**     | **Persistent Application Stacks:** Your `docker-compose.yml` stacks, `.env` files, and app volume mounts.                | `/srv/docker/caddy/docker-compose.yml`<br/>`/srv/docker/uptime-kuma/data/` | Standard CoW (`compress=zstd:3`) |
+| **`/srv/postgres`**   | **Database Storage:** High IOPS random write database files (PostgreSQL, MariaDB, SQLite).                               | PostgreSQL data directory<br/>`/var/lib/postgresql/data`                   | **`NOCOW` (`sudo chattr +C`)**   |
+| **`/srv/www`**        | **Static Web Assets:** Built frontend static HTML/CSS/JS artifacts served by Caddy or Nginx.                             | `/srv/www/docs/index.html`<br/>`/srv/www/portfolio/dist/`                  | Standard CoW (`compress=zstd:3`) |
+| **`/var/lib/docker`** | **Docker Engine Internals (Ephemeral):** Downloaded image layers, container overlays, build cache. Managed by `dockerd`. | Managed automatically by Docker daemon.                                    | Standard CoW                     |
+
+> 💡 **Where should custom code live?**
+>
+> - **Self-Hosted / Third-Party Apps (e.g. Caddy, Uptime Kuma):** Place directly in `/srv/docker/<app-name>/`.
+> - **Custom Repositories You Develop:** Keep source code in `/home/$USER/projects/<app-name>/` (containing your `Dockerfile` & `docker-compose.yml`), and mount persistent uploads/database outputs to `/srv/docker` or `/srv/postgres`.
+
+---
+
 ## 🌟 Recommended Default Track: Containerized Database via Docker Volumes
 
 Running database engines inside Docker containers with host-bound volume mounts provides simple upgrading, clean isolation, and zero host pollution.
@@ -117,6 +136,41 @@ docker run -d \
 
 ---
 
+### 3. Valkey / Redis Containerized Cache Layer
+
+For session management, job queues (e.g., BullMQ, Celery), and application caching (e.g., Nextcloud, WordPress), deploy Valkey (an open-source Redis fork) or Redis with persistent volume storage:
+
+```bash
+sudo mkdir -p /srv/redis
+sudo chattr +C /srv/redis
+sudo chown -R $USER:$USER /srv/redis
+
+docker run -d \
+  --name redis-cache \
+  --restart always \
+  -v /srv/redis:/data \
+  -p 6379:6379 \
+  valkey/valkey:8-alpine \
+  valkey-server --appendonly yes
+```
+
+---
+
+### 4. SQLite Optimization on BTRFS
+
+For lightweight web apps and microservices using SQLite (e.g., Vaultwarden, Uptime Kuma):
+
+1. **NOCOW Storage:** Place `.sqlite` or `.db` files inside a directory configured with `chattr +C`.
+2. **Write-Ahead Logging (WAL):** Enable WAL mode to allow concurrent readers while writing, significantly improving performance and reducing lock contention:
+
+```sql
+-- Execute inside your SQLite connection
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+```
+
+---
+
 ## 🖥️ Alternative Branch: Bare-Metal Database Services
 
 If you prefer installing database servers directly on the Ubuntu host OS for raw performance without container overhead:
@@ -153,9 +207,9 @@ sudo systemctl restart postgresql
 
 ---
 
-## 💾 Automated Database Backups (CRON)
+## 💾 Automated Database Backups & Restoration Verification
 
-Never rely on container volume snapshots alone. Schedule automated SQL dump backups to a separate backup directory.
+Never rely on BTRFS snapshots alone for database backups because live database files may be in an inconsistent state during a snapshot. Always maintain automated SQL dumps.
 
 ### 1. PostgreSQL Automated Backup Script (`backup-postgres.sh`)
 
@@ -163,18 +217,19 @@ Create `/home/toni/scripts/backup-postgres.sh`:
 
 ```bash
 #!/bin/bash
+set -euo pipefail
+
 BACKUP_DIR="/home/toni/backups/postgres"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 mkdir -p "$BACKUP_DIR"
 
 # Execute pg_dump inside container
-docker exec postgres-db pg_dump -U appuser appdb > "$BACKUP_DIR/appdb_$TIMESTAMP.sql"
-
-# Compress backup
-gzip "$BACKUP_DIR/appdb_$TIMESTAMP.sql"
+docker exec postgres-db pg_dump -U appuser appdb | gzip > "$BACKUP_DIR/appdb_$TIMESTAMP.sql.gz"
 
 # Delete backups older than 14 days
 find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +14 -delete
+
+echo "[$(date)] Backup completed: appdb_$TIMESTAMP.sql.gz"
 ```
 
 Make executable:
@@ -194,5 +249,45 @@ crontab -e
 Add daily 2:00 AM backup entry:
 
 ```bash
-0 2 * * * /home/toni/scripts/backup-postgres.sh > /dev/null 2>&1
+0 2 * * * /home/toni/scripts/backup-postgres.sh >> /home/toni/backups/backup.log 2>&1
 ```
+
+---
+
+### 3. Database Restoration Verification
+
+A backup is unverified until you test restoring it! To restore a PostgreSQL compressed database dump into a containerized instance:
+
+```bash
+# 1. Create a fresh test database inside the container
+docker exec -it postgres-db psql -U appuser -d postgres -c "CREATE DATABASE restore_test;"
+
+# 2. Decompress and pipe the backup SQL into the target database
+gunzip -c /home/toni/backups/postgres/appdb_20260727_020000.sql.gz | docker exec -i postgres-db psql -U appuser -d restore_test
+
+# 3. Verify tables and record counts
+docker exec -it postgres-db psql -U appuser -d restore_test -c "\dt"
+
+# 4. Clean up test database after verification
+docker exec -it postgres-db psql -U appuser -d postgres -c "DROP DATABASE restore_test;"
+```
+
+For MariaDB:
+
+```bash
+gunzip -c /home/toni/backups/mariadb/wordpress_20260727.sql.gz | docker exec -i mariadb-db mariadb -u wpuser -pwppassword wordpress
+```
+
+---
+
+## 🧪 Live Validation & Verification Checklist (`neuromancer`)
+
+Run through this interactive checklist on your server to verify Layer 4 setup:
+
+| Step                   | Command / Task                                    | Verification Criteria                                    | Status     |
+| :--------------------- | :------------------------------------------------ | :------------------------------------------------------- | :--------- |
+| **1. NOCOW Attribute** | `lsattr -d /srv/postgres /srv/mariadb /srv/redis` | Must show `---------------C------` for all folders       | ⏳ Pending |
+| **2. Active Mounts**   | `findmnt -t btrfs`                                | `/srv/postgres` active on BTRFS subvolume `@postgres`    | ⏳ Pending |
+| **3. Postgres Health** | `docker exec postgres-db pg_isready -U appuser`   | Output: `accepting connections`                          | ⏳ Pending |
+| **4. Database Backup** | `/home/toni/scripts/backup-postgres.sh`           | `.sql.gz` file created in `/home/toni/backups/postgres/` | ⏳ Pending |
+| **5. Restore Test**    | Pipe backup into `restore_test` DB                | Tables created cleanly with zero SQL errors              | ⏳ Pending |

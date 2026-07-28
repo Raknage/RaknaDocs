@@ -248,6 +248,16 @@ Once Ubuntu Server is installed and booted into, configure your full subvolume l
 
   </TabItem>
 </Tabs>
+
+<Aside type="tip" title="FAQ: Do I need to change my existing BTRFS setup?">
+  Directory paths like `/srv/docker` or `/srv/postgres` are organizational conventions. Docker
+  volume mounts (`-v /host/path:/container/path`) work regardless of where your directories or
+  subvolumes are located: - **`/var/lib/docker` (Ephemeral / Engine):** Managed automatically by
+  Docker for downloaded image layers, container rootfs overlays, and build caches. - **`/srv/docker`
+  (Persistent / Application):** Holds your `docker-compose.yml` files, `.env` configurations, and
+  persistent container data. - **`/home/$USER` (Source Code):** Ideal location for your own Git
+  repositories (`~/projects/my-app`).
+</Aside>
 ---
 
 #### 🛠️ Essential `apt` Package Manager Cheat Sheet
