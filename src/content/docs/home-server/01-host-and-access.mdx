@@ -1,173 +1,474 @@
 ---
-title: "01. Host Platform, OS & Remote Access"
-description: Complete guide for setting up hardware, Ubuntu Server, SSH security, and Wake-on-LAN.
+title: "01. Host Platform, Hardware & Remote Access"
+description: Hardware repurposing, minimal Ubuntu Server installation, SSH key security, Netplan static IP, Wake-on-LAN, and UFW firewall.
 sidebar:
   order: 2
 ---
 
-import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
-This guide covers setting up your home server hardware, installing Ubuntu Server, configuring secure passwordless SSH access, and enabling Wake-on-LAN for remote power management.
-
----
-
-## 💻 Hardware & OS Installation
-
-When repurposing desktop hardware as a dedicated server:
-
-- **Storage:** Allocate at least 32GB for `/` (root) and use extra drives for data persistence (`/mnt/data` or `/var/lib/docker`).
-- **Power Management:** Configure the BIOS/UEFI to automatically **Power On after Power Loss**.
-
-### Customizing Ubuntu Server Installation
-
-During the Ubuntu Server installation wizard:
-
-1. Choose **Ubuntu Server (Minimal)** to avoid unnecessary desktop UI packages.
-2. Under **Network**, set a static IP address or bind a DHCP reservation on your router.
-3. Enable **OpenSSH Server** installation.
-4. Skip snap packages unless specifically required.
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Target PC/Laptop hardware, storage drives, ethernet
+    connection, USB installer drive.
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Secured SSH access, static LAN IP address,
+    Wake-on-LAN capability, and hardened UFW firewall.
+  </p>
+</Aside>
 
 ---
 
-## 🔑 Remote Access & SSH Setup
+## 🛠️ Part 1: Hardware Repurposing & OS Installation
 
-Configure SSH key-based authentication for fast, secure passwordless logins.
+### 1. Hardware Preparation & BIOS Configuration
 
-### 1. Generating & Copying SSH Keys
+Before installing Ubuntu Server, configure your BIOS/UEFI firmware settings to ensure the server remains accessible without human intervention:
 
-<Tabs>
-  <TabItem label="Linux" icon="linux">
-    ```bash
-    # Generate SSH key pair
-    ssh-keygen -t ed25519 -C "homeserver-key"
+- **Restore AC Power Loss:** Set **Restore on AC Power Loss** to `Power On` or `Last State` so the machine automatically reboots after power outages.
+- **Disable C-States / Deep Sleep (Optional):** If repurposing legacy laptop hardware, disable CPU aggressive C-states to prevent sleep states from dropping network connections.
+- **Thermal Maintenance:** Clean dust filters and replace thermal paste on legacy hardware.
 
-    # Copy key to server
-    ssh-copy-id -i ~/.ssh/id_ed25519.pub user@192.168.1.100
-    ```
+### 2. Step-by-Step Ubuntu Server OS Installation Walkthrough
 
-  </TabItem>
+Download the official **Ubuntu Server LTS ISO** (24.04 LTS or 26.04 LTS) and write it to a USB flash drive using [BalenaEtcher](https://etcher.balena.io/), [Rufus](https://rufus.ie/), or `dd`.
 
-  <TabItem label="Windows (PowerShell)">
-    ```powershell
-    # Generate SSH key pair
-    ssh-keygen -t ed25519 -C "homeserver-key"
+<Aside type="note" title="EFI System Partition (ESP) Requirement">
+  <Badge text="Mandatory for UEFI" variant="caution" /> UEFI hardware requires a dedicated
+  <strong>EFI System Partition (ESP)</strong> formatted as <code>FAT32</code> (vfat) and mounted at{" "}
+  <code>/boot/efi</code> (typically 1.0 GB). The Ubuntu installer automatically creates this
+  partition alongside your main BTRFS partition during guided storage setup.
+</Aside>
 
-    # Copy key to server
-    cat ~/.ssh/id_ed25519.pub | ssh user@192.168.1.100 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
-    ```
+<Aside type="note" title="Minimal vs Standard Server Installation">
+  Neither standard nor minimal Ubuntu Server installs a graphical desktop GUI (unlike Ubuntu
+  Desktop). Selecting **Ubuntu Server (Minimal)** strips out ~200+ non-essential CLI tools, Snap
+  packages, LXD containers, and background telemetry daemons, creating a lean ~1.5 GB installation
+  footprint (vs ~3.5 GB for standard server).
+</Aside>
 
-  </TabItem>
-</Tabs>
-
-### 2. Client SSH Config (`~/.ssh/config`)
-
-Simplify remote access by creating an SSH alias on your client machine:
-
-```ini
-Host homeserver
-    HostName 192.168.1.100
-    User adminuser
-    IdentityFile ~/.ssh/id_ed25519
-    Port 22
-```
-
-Now you can log in directly with:
-
-```bash
-ssh homeserver
-```
-
-### 3. File Transfer over SSH
-
-<Tabs>
-  <TabItem label="rsync (Recommended)">
-    ```bash
-     # Sync local directory to server rsync -avzP --exclude 'node_modules' ./my-app/
-    homeserver:/opt/apps/my-app/ 
-    ```
-  </TabItem>
-
-  <TabItem label="scp">
-    ```bash
-    # Copy single file or tar archive 
-    scp ./deploy-bundle.tar.gz homeserver:/tmp/ 
-    ```
-  </TabItem>
-</Tabs>
-
----
-
-## ⚡ Wake-on-LAN (WoL) Setup
-
-Wake-on-LAN allows you to remotely power on your server over the local network using a Magic Packet.
+<Aside type="note" title="Swap Partition vs Swap File">
+  <Badge text="Recommendation" variant="success" /> Do **NOT** create a dedicated swap partition
+  during installation. Modern Ubuntu Server automatically provisions a dynamic **swap file**
+  (`/swap.img`) on your main SSD partition. Using a swap file keeps partitioning simple and allows
+  you to resize swap later without disk repartitioning.
+</Aside>
 
 <Steps>
 
-1. **Enable WoL in BIOS/UEFI:**
-   Enable options like `Power On by PCI-E/LAN` or `Wake-on-LAN`.
+1. **Boot Installer USB:**
+   Insert the USB installer drive into your server hardware. Turn on the server and press `F12`, `F11`, `F8`, or `Del` to open the BIOS boot menu. Select your USB drive under **UEFI Boot Options**.
 
-2. **Enable WoL in Ubuntu (`ethtool`):**
+2. **Select Language & Keyboard Layout:**
+   Select **English** (or your preferred language) and set your keyboard layout.
 
-   Check network interface name:
+3. **Choose Installation Type (Minimal Baseline):**
+   When prompted for installer type, choose **Ubuntu Server (Minimal)** to ensure a lightweight, secure baseline with minimal pre-installed packages.
 
-   ```bash
-   ip link show
-   ```
+4. **Network Interface Setup:**
+   The installer automatically detects active ethernet interfaces (e.g. `enp2s0`) and requests an IP via DHCP. Leave this as default during installation (you will set a static LAN IP via Netplan post-installation).
 
-   Install `ethtool` and verify WoL support (`g` means Wake on Magic Packet):
+5. **Proxy & Archive Mirror Configuration:**
+   Leave proxy blank unless required by your network environment. Press **Done** to accept default regional Ubuntu archive mirrors.
 
-   ```bash
-   sudo apt update && sudo apt install -y ethtool
-   sudo ethtool enp3s0 | grep "Wake-on"
-   # Supports Wake-on: pumbg
-   # Wake-on: g
-   ```
+6. **Guided Storage Setup & BTRFS Disk Selection:**
+   On the **Storage Configuration** screen:
+   - Select **Use an entire disk**.
+   - Under filesystem type, select **Btrfs**.
+   - Ensure **Encrypt the LVM partition** is _unchecked_ (unless full disk encryption is specifically required).
+   - Select **Done** and confirm formatting when prompted with _Wipe drive and continue?_.
 
-3. **Make WoL Persistent across Reboots:**
+   > 💡 **Partition Table Created by Subiquity:**
+   >
+   > - **Partition 1 (`/boot/efi`):** 1.0 GB FAT32 (EFI System Partition for UEFI bootloader).
+   > - **Partition 2 (`/`):** Remaining SSD capacity formatted as a single BTRFS storage pool (`subvolid=5`). Subiquity installs the base system directly into the root pool without creating any subvolumes.
 
-   Create a systemd service at `/etc/systemd/system/wol.service`:
+7. **Profile & Server Name Setup:**
+   Fill in your admin profile credentials:
+   - **Your name:** Admin user name (e.g. `toni`)
+   - **Your server's name:** Server hostname (e.g. `neuromancer`)
+   - **Pick a username:** Primary SSH login username
+   - **Password:** Strong administrative password
 
-   ```ini
-   [Unit]
-   Description=Enable Wake-on-LAN
-   After=network.target
+8. **SSH Setup (Install OpenSSH Server):**
+   Check **[X] Install OpenSSH server**. Leave _Import SSH identity_ set to _No_ (you will configure SSH key authentication in Part 2).
 
-   [Service]
-   Type=oneshot
-   ExecStart=/sbin/ethtool -s enp3s0 wol g
+9. **Featured Server Snaps:**
+   Do **NOT** select any pre-packaged Snaps (Docker, Nextcloud, etc.). Press **Done** to maintain full control over manual installation in later guide chapters.
 
-   [Install]
-   WantedBy=basic.target
-   ```
+10. **Installation Completion & Reboot:**
+    Wait for the installer to finish copying system packages and installing updates. When prompted with **Installation Complete**, choose **Reboot Now**. Unplug the USB flash drive when instructed by the prompt.
 
-   Enable the service:
+11. **First Boot & Initial System Upgrade:**
+    After rebooting into your fresh server terminal, log in with your primary user account and run an immediate system update:
 
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now wol.service
-   ```
+    ```bash
+    # Refresh package index and upgrade all installed base packages
+    sudo apt update && sudo apt upgrade -y
 
-4. **Send Magic Packet from Client:**
-
-   <Tabs>
-     <TabItem label="Linux" icon="linux">
-       ```bash wakeonlan AA:BB:CC:DD:EE:FF # or using etherwake sudo etherwake -i eth0
-       AA:BB:CC:DD:EE:FF ```
-     </TabItem>
-     <TabItem label="Windows (PowerShell)">
-       ```powershell # Using wol.exe or PowerShell script Send-WOL -MacAddress "AA:BB:CC:DD:EE:FF"
-       ```
-     </TabItem>
-   </Tabs>
+    # Install essential editing, retrieval, and monitoring tools
+    sudo apt install -y nano curl git btop btrfs-progs tmux unzip
+    ```
 
 </Steps>
 
+### 3. Post-Install Disk Storage & Subvolume Mount Setup (BTRFS)
+
+<Aside type="caution" title="Ubuntu Server Subiquity BTRFS Behavior">
+  Unlike Ubuntu Desktop or Fedora, **Ubuntu Server (Subiquity)** does **NOT** create any subvolumes
+  automatically. The installer places the root OS directly in the top-level BTRFS pool
+  (`subvolid=5`). All subvolumes (`@home`, `@www`, `@docker`, `@postgres`, `@snapshots`) are created
+  manually post-installation.
+</Aside>
+
+Once Ubuntu Server is installed and booted into, configure your full subvolume layout:
+
+<Tabs>
+  <TabItem label="Single 240 GB SSD Setup (BTRFS)">
+    For a modern home server running on a single SSD drive, **BTRFS** uses **subvolumes** sharing a single storage pool, enabling instant CoW system snapshots and transparent `zstd` compression:
+
+    ```bash
+    /dev/sda1 (1.0 GB)   → EFI System Partition (FAT32, mounted at /boot/efi)
+    /dev/sda2 (239 GB)  → BTRFS Storage Pool (subvolid=5, mounted at /)
+                          ├── subvol=@home            → Mounted at /home (User assets)
+                          ├── subvol=@www             → Mounted at /srv/www (Web services)
+                          ├── subvol=@docker          → Mounted at /srv/docker (Docker containers)
+                          ├── subvol=@postgres        → Mounted at /srv/postgres (Database storage)
+                          └── subvol=@snapshots       → Mounted at /.snapshots (System snapshots)
+    ```
+
+    <Steps>
+
+    1. **Identify Partition UUID:**
+       Run `sudo blkid` or `lsblk -f` to inspect block device UUIDs:
+
+       ```bash
+       sudo blkid
+       ```
+       > 💡 **BTRFS Subvolume Rule:** All subvolumes (`@home`, `@www`, `@docker`, `@postgres`, `@snapshots`) on the same physical partition share the **exact same UUID**. You differentiate subvolumes in `/etc/fstab` using the `subvol=` option.
+
+    2. **Mount Top-Level BTRFS Pool & Create Subvolumes:**
+       Mount the root BTRFS storage pool (`subvolid=5`) to `/mnt` and create missing subvolumes:
+
+       ```bash
+       # Mount top-level pool (Replace /dev/sda2 with your BTRFS partition)
+       sudo mount -o subvolid=5 /dev/sda2 /mnt
+
+       # Create subvolumes inside the BTRFS pool
+       sudo btrfs subvolume create /mnt/@home
+       sudo btrfs subvolume create /mnt/@www
+       sudo btrfs subvolume create /mnt/@docker
+       sudo btrfs subvolume create /mnt/@postgres
+       sudo btrfs subvolume create /mnt/@snapshots
+       ```
+
+    3. **Migrate User Profile to `@home` Subvolume:**
+       Since Ubuntu installed your user profile under `/home/$USER` in the root pool (visible at `/mnt/home/$USER` when `subvolid=5` is mounted to `/mnt`), copy it into the new `@home` subvolume before mounting:
+
+       ```bash
+       # Copy initial home directory from top-level pool into @home subvolume
+       sudo cp -a /mnt/home/$USER /mnt/@home/
+       sudo chown -R $USER:$USER /mnt/@home/$USER
+
+       # Unmount top-level pool
+       sudo umount /mnt
+       ```
+
+    4. **Create Target Directory Mount Points:**
+       Linux requires target mount directories to exist on the filesystem before mounting:
+
+       ```bash
+       sudo mkdir -p /srv/www /srv/docker /srv/postgres /.snapshots
+       ```
+
+    5. **Configure `/etc/fstab` Mount Entries:**
+       Open `/etc/fstab` (`sudo nano /etc/fstab`). **Keep your existing `/boot/efi` and `/swap.img` lines intact** (removing `/boot/efi` breaks kernel updates). Update your root `/` entry with `compress=zstd:3,noatime` and add your subvolume entries using your real BTRFS UUID:
+
+       ```ini
+       # /etc/fstab: static file system information.
+       # <file system>                                <mount point>  <type>  <options>                                <dump><pass>
+
+       # 1. Root Filesystem (BTRFS pool subvolid=5 with zstd compression)
+       UUID=e99ab55e-762d-4649-bc55-05fa77db5359  /              btrfs  defaults,noatime,compress=zstd:3         0 0
+
+       # 2. BTRFS Subvolumes (Sharing the same partition UUID)
+       UUID=e99ab55e-762d-4649-bc55-05fa77db5359  /home          btrfs  defaults,noatime,compress=zstd:3,subvol=@home      0 0
+       UUID=e99ab55e-762d-4649-bc55-05fa77db5359  /srv/www       btrfs  defaults,noatime,compress=zstd:3,subvol=@www       0 0
+       UUID=e99ab55e-762d-4649-bc55-05fa77db5359  /srv/docker    btrfs  defaults,noatime,compress=zstd:3,subvol=@docker    0 0
+       UUID=e99ab55e-762d-4649-bc55-05fa77db5359  /srv/postgres  btrfs  defaults,noatime,compress=zstd:3,subvol=@postgres  0 0
+       UUID=e99ab55e-762d-4649-bc55-05fa77db5359  /.snapshots    btrfs  defaults,noatime,compress=zstd:3,subvol=@snapshots 0 0
+
+       # 3. EFI System Partition (DO NOT REMOVE)
+       /dev/disk/by-uuid/9888-8EAC                /boot/efi      vfat   defaults                                 0 1
+
+       # 4. Swap File (DO NOT REMOVE)
+       /swap.img                                  none           swap   sw                                       0 0
+       ```
+
+    6. **Reload Daemons & Apply Mounts:**
+       Verify your syntax and mount all subvolumes without rebooting:
+
+       ```bash
+       sudo systemctl daemon-reload
+       sudo mount -a
+       ```
+
+    7. **Verify Active Mounts:**
+       Confirm all subvolumes are active with transparent compression (`zstd`):
+
+       ```bash
+       findmnt -t btrfs
+       ```
+
+    </Steps>
+
+  </TabItem>
+
+  <TabItem label="Multi-SSD / Dedicated Storage Drive Setup">
+    If your home server has multiple physical SSDs or dedicated data drives, mount separate BTRFS pools or subvolumes for isolated storage:
+
+    ```bash
+    /boot/efi   → 1.0 GB SSD 1 (FAT32 EFI partition)
+    /           → 120 GB SSD 1 (BTRFS OS root subvol=@)
+    /home       → 240 GB SSD 2 (BTRFS Developer assets subvol=@home)
+    /var/data   → 500 GB SSD 3 (Dedicated BTRFS Database & Docker volume drive)
+    ```
+
+    <Aside type="tip" title="Multi-Drive BTRFS Mounts & fstab">
+      Format dedicated secondary data drives as BTRFS and mount them via `/etc/fstab` using UUIDs:
+      ```bash
+      # Find secondary drive UUID
+      sudo blkid /dev/sdb1
+
+      # Add entry to /etc/fstab with zstd compression
+      UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /var/data btrfs defaults,noatime,compress=zstd:1 0 0
+      ```
+    </Aside>
+
+  </TabItem>
+</Tabs>
+
+<Aside type="tip" title="FAQ: Do I need to change my existing BTRFS setup?">
+  Directory paths like `/srv/docker` or `/srv/postgres` are organizational conventions. Docker
+  volume mounts (`-v /host/path:/container/path`) work regardless of where your directories or
+  subvolumes are located: - **`/var/lib/docker` (Ephemeral / Engine):** Managed automatically by
+  Docker for downloaded image layers, container rootfs overlays, and build caches. - **`/srv/docker`
+  (Persistent / Application):** Holds your `docker-compose.yml` files, `.env` configurations, and
+  persistent container data. - **`/home/$USER` (Source Code):** Ideal location for your own Git
+  repositories (`~/projects/my-app`).
+</Aside>
 ---
 
-## ➡️ Next Step Choices
+#### 🛠️ Essential `apt` Package Manager Cheat Sheet
 
-Select your runtime environment:
+| Action / Purpose               | Command                     | Notes                                                                 |
+| :----------------------------- | :-------------------------- | :-------------------------------------------------------------------- |
+| **Refresh Package Index**      | `sudo apt update`           | Fetches latest available package lists from Ubuntu mirrors            |
+| **Upgrade Installed Packages** | `sudo apt upgrade -y`       | Installs latest security patches and updates for installed software   |
+| **Install New Package**        | `sudo apt install -y nano`  | Installs a text editor, tool, or service (e.g. `nano`, `curl`, `git`) |
+| **Search Repositories**        | `apt search <keyword>`      | Searches Ubuntu repositories for available software packages          |
+| **Remove Package**             | `sudo apt remove <package>` | Uninstalls package while preserving configuration files               |
+| **Purge Package & Configs**    | `sudo apt purge <package>`  | Uninstalls package and deletes its configuration files                |
+| **Clean Orphaned Packages**    | `sudo apt autoremove -y`    | Removes leftover dependency packages to reclaim disk space            |
 
-- [Path A: Fast Node Manager (`fnm`) & Node.js →](/home-server/02-runtimes#option-a-nodejs-via-fnm)
-- [Path B: Python Virtual Environments →](/home-server/02-runtimes#option-b-python-environments)
-- [Path C: Full Global Stack →](/home-server/02-runtimes#option-c-global-system-stack)
+---
+
+## 🔐 Part 2: Security & Remote Access
+
+### 1. Static LAN IP Reservation (Netplan)
+
+Assign a static IP address to your server so SSH and internal routing targets remain constant across router reboots.
+
+Inspect your network interface name:
+
+```bash
+ip link show
+# Example output interface: enp2s0
+```
+
+Edit your Netplan configuration file at `/etc/netplan/00-installer-config.yaml`:
+
+```yaml
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp2s0:
+      dhcp4: no
+      addresses:
+        - 192.168.1.xxx/24
+      routes:
+        - to: default
+          via: 192.168.1.1
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
+      match:
+        macaddress: "xx:xx:xx:xx:xx:xx"
+      wakeonlan: true
+```
+
+Apply the netplan configuration:
+
+```bash
+sudo netplan apply
+```
+
+---
+
+### 2. SSH Key Authentication & Hardening
+
+Password-based SSH authentication is vulnerable to brute-force attacks. Secure remote access with `ed25519` SSH key pairs.
+
+<Aside type="tip" icon="open-book">
+  More detailed info in [SSH reference](/reference/ssh)
+</Aside>
+
+#### Step A: Generate & Transfer SSH Key from Client Machine
+
+On your client machine (laptop/desktop):
+
+```bash
+# Generate key pair
+ssh-keygen -t ed25519 -C "admin@homeserver.com"
+
+# Copy key to remote server
+ssh-copy-id toni@192.168.1.xxx
+```
+
+#### Step B: Disable Password Authentication & Root Login
+
+Log into the server and harden `/etc/ssh/sshd_config.d/hardened.conf`:
+
+```ini
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+X11Forwarding no
+```
+
+Restart the SSH daemon:
+
+```bash
+sudo systemctl restart ssh
+```
+
+#### Step C: Remote File Transfers (`scp` & `rsync`)
+
+Transfer files securely between your workstation and home server:
+
+```bash
+# Local to Remote using scp
+scp -r ./my-app toni@192.168.1.xxx:/home/toni/
+
+# Remote log sync using rsync
+rsync -avz toni@192.168.1.xxx:/var/log/syslog ./server-syslog.log
+```
+
+---
+
+### 3. Wake-on-LAN (WoL) Setup
+
+Wake-on-LAN allows you to power on your home server remotely over the LAN using a magic ethernet packet.
+
+Verify interface WoL capability:
+
+```bash
+sudo ethtool enp2s0 | grep Wake
+# Look for: Supports Wake-on: pumbg / Wake-on: g
+```
+
+Enable WoL using `ethtool`:
+
+```bash
+sudo ethtool -s enp2s0 wol g
+```
+
+To wake your home server from another LAN machine or router:
+
+```bash
+# Install wakeonlan utility
+sudo apt install wakeonlan
+
+# Broadcast magic packet using server MAC address
+wakeonlan xx:xx:xx:xx:xx:xx
+```
+
+---
+
+### 4. Firewall (UFW) Configuration & Essential Commands
+
+Configure Uncomplicated Firewall (UFW) to enforce default-deny incoming rules for network security:
+
+<Aside type="note" title="Why Open Ports 80 (HTTP) & 443 (HTTPS)?">
+  - **Port 80 (HTTP):** Required for initial HTTP web requests, automatic HTTP-to-HTTPS redirects,
+  and automated Let's Encrypt / Caddy ACME HTTP-01 domain validation challenges when issuing SSL
+  certificates. - **Port 443 (HTTPS):** Required for secure, encrypted SSL/TLS web traffic to your
+  reverse proxies (Caddy/Nginx), web apps, and APIs.
+</Aside>
+
+```bash
+# Install UFW
+sudo apt install ufw -y
+```
+
+```bash
+# Set default policies (block incoming, allow outgoing)
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+# Allow essential service ports
+sudo ufw allow 22/tcp comment 'SSH'
+sudo ufw allow 80/tcp comment 'HTTP'
+sudo ufw allow 443/tcp comment 'HTTPS'
+
+# Enable firewall
+sudo ufw enable
+```
+
+#### 🛠️ Essential UFW Command Reference
+
+| Action / Purpose              | Command                                             | Notes                                                    |
+| :---------------------------- | :-------------------------------------------------- | :------------------------------------------------------- |
+| **Check Status & Rules**      | `sudo ufw status verbose`                           | Shows active status and enabled port rules               |
+| **Numbered Rule List**        | `sudo ufw status numbered`                          | Displays rule index numbers needed for deletion          |
+| **Delete Rule by Number**     | `sudo ufw delete 3`                                 | Deletes rule #3 from the numbered list                   |
+| **Delete Rule by Service**    | `sudo ufw delete allow 80/tcp`                      | Deletes specific port rule                               |
+| **Restrict SSH to Local LAN** | `sudo ufw allow from 192.168.1.0/24 to any port 22` | Restricts SSH access strictly to internal LAN subnet     |
+| **Allow Custom App Port**     | `sudo ufw allow 3000/tcp comment 'Astro App'`       | Opens port 3000 with a descriptive label                 |
+| **Reload Firewall**           | `sudo ufw reload`                                   | Re-applies rule changes without dropping active sessions |
+| **Reset Firewall**            | `sudo ufw reset`                                    | Disables UFW and clears all custom rules to defaults     |
+
+---
+
+#### Optional: Web-Based Management (Cockpit)
+
+If you prefer a web GUI dashboard for server metrics, software updates, and terminal access:
+
+```bash
+# Install Cockpit, PackageKit update integration, and NetworkManager
+sudo apt install -y cockpit cockpit-packagekit packagekit network-manager
+sudo systemctl enable --now cockpit.socket
+sudo ufw allow 9090/tcp comment 'Cockpit Web Dashboard'
+```
+
+Access Cockpit at `https://192.168.1.xxx:9090`.
+
+<Aside type="caution" title="Troubleshooting Cockpit: 'Cannot refresh cache whilst offline'">
+  <p><Badge text="Gotcha" variant="danger" /> Cockpit Software Updates tab reports: <em>Loading available updates failed — Cannot refresh cache whilst offline</em>.</p>
+
+**Cause:** Ubuntu Server uses Netplan with `systemd-networkd` by default. PackageKit queries NetworkManager over D-Bus to check if the network is active. Because NetworkManager is not managing the interface, PackageKit falsely assumes the server is offline and refuses to check updates.
+
+**Fix:** Configure PackageKit to disable the NetworkManager online check in `/etc/PackageKit/PackageKit.conf`:
+
+```bash
+# 1. Disable NetworkManager online check in PackageKit config
+sudo sed -i 's/UseNetworkManager=true/UseNetworkManager=false/g' /etc/PackageKit/PackageKit.conf
+
+# 2. Restart PackageKit daemon
+sudo systemctl restart packagekit
+```
+
+Reload the Cockpit web page in your browser.
+
+</Aside>

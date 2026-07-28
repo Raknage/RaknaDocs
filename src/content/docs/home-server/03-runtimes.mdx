@@ -1,0 +1,326 @@
+---
+title: "03. Runtime Environments & Process Setup"
+description: Fast Node Manager (fnm), Python virtual environments (venv), systemd PATH resolution, and environment variables.
+sidebar:
+  order: 4
+---
+
+import { Aside, Badge, Card, CardGrid, Steps, Icon } from "@astrojs/starlight/components";
+
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Shell Access (from Layer 1).
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Isolated Node.js and Python executable binary paths,
+    environment variable files, systemd PATH hooks.
+  </p>
+</Aside>
+
+---
+
+## 🌟 Node.js via `fnm` (Fast Node Manager)
+
+`fnm` (Fast Node Manager) is a Rust-built, ultra-fast Node.js version manager. Unlike NVM, `fnm` does not slow down shell startup and provides automatic `.nvmrc` / `.node-version` switching on directory changes.
+
+### 1. Installing `fnm`
+
+Run the official installer script:
+
+```bash
+curl -fsSL https://fnm.vercel.app/install | bash
+```
+
+```bash
+source ~/.bashrc
+```
+
+---
+
+### 2. Installing & Managing Node.js Versions
+
+```bash
+# Install latest LTS Node.js release
+fnm install --lts
+
+# Set default LTS version
+fnm default lts-latest
+
+# Verify installation
+node -v
+npm -v
+
+# Install pnpm
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+source ~/.bashrc
+pnpm -v
+```
+
+---
+
+### 3. Install Vite+
+
+[Vite+ docs](https://viteplus.dev/guide/)
+
+```bash
+curl -fsSL https://vite.plus | bash
+```
+
+---
+
+### 4. Systemd Binary PATH Resolution for `fnm`
+
+Because systemd runs background services in an isolated environment without loading `~/.bashrc`, systemd unit files must point to the canonical `fnm` binary symlink:
+
+Canonical binary path for `fnm` Node executable:
+
+```ini
+/home/toni/.local/share/fnm/current/bin/node
+/home/toni/.local/share/fnm/current/bin/npm
+```
+
+Example systemd ExecStart entry:
+
+```ini
+ExecStart=/home/toni/.local/share/fnm/current/bin/node /home/toni/my-app/server.js
+```
+
+---
+
+## 🐍 Python Runtimes (`uv` by Astral)
+
+[uv](https://docs.astral.sh/uv/) is an extremely fast Python package and project manager written in Rust by Astral. It replaces `pip`, `pip-tools`, `virtualenv`, `pyenv`, and `poetry`, providing 10x–100x faster package installations alongside automatic Python version management.
+
+### 1. Installing `uv`
+
+Run the official standalone installer:
+
+```bash
+# Install uv on Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Reload shell configuration
+source ~/.bashrc
+```
+
+Verify installation:
+
+```bash
+uv --version
+```
+
+### 2. Python Version & Virtual Environment Management (`uv venv`)
+
+`uv` automatically downloads and manages standalone Python executables without requiring system `apt` Python packages or `pyenv`:
+
+```bash
+# Install a specific Python version
+uv python install 3.12
+
+# Navigate to project directory
+cd /home/toni/my-python-app
+
+# Create a virtual environment (.venv) using Python 3.12
+uv venv --python 3.12
+
+# Activate virtual environment
+source .venv/bin/activate
+```
+
+### 3. Fast Package Installation (`uv pip`)
+
+`uv pip` is a drop-in replacement for standard `pip` with aggressive parallel resolution:
+
+```bash
+# Install project dependencies from requirements.txt
+uv pip install -r requirements.txt
+
+# Install individual packages fast
+uv pip install fastapi uvicorn gunicorn
+
+# Lock dependencies into requirements.txt
+uv pip compile requirements.in -o requirements.txt
+```
+
+### 4. Modern Project Workflow (`uv init`, `uv add`, `uv run`)
+
+For modern Python applications built around `pyproject.toml`:
+
+```bash
+# Initialize a new Python project
+uv init my-api
+cd my-api
+
+# Add dependencies (automatically updates pyproject.toml & uv.lock)
+uv add fastapi uvicorn
+
+# Execute scripts inside the managed environment without manual activation
+uv run python main.py
+```
+
+### 5. Systemd Binary PATH Resolution for Python Services
+
+When configuring background `systemd` units for Python services (e.g., FastAPI, Gunicorn, Celery), point `ExecStart` directly to the virtual environment's executable:
+
+Canonical binary paths for `uv` virtualenv:
+
+```ini
+/home/toni/my-python-app/.venv/bin/python
+/home/toni/my-python-app/.venv/bin/gunicorn
+```
+
+Example systemd service unit (`/etc/systemd/system/my-python-app.service`):
+
+```ini
+[Unit]
+Description=FastAPI Service
+After=network.target
+
+[Service]
+User=toni
+WorkingDirectory=/home/toni/my-python-app
+ExecStart=/home/toni/my-python-app/.venv/bin/gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## 🐹 Go Runtime Installation
+
+Go (Golang) is ideal for building compiled, high-performance home server microservices, CLI utilities, and web applications.
+
+### 1. Download & Install Official Go Binary
+
+Download the latest official Go release tarball and extract it to `/usr/local`:
+
+```bash
+# Download official Go tarball
+curl -OL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz
+
+# Remove previous installation and extract new release
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.23.5.linux-amd64.tar.gz
+
+# Clean up archive
+rm go1.23.5.linux-amd64.tar.gz
+```
+
+### 2. Configure Environment & PATH (`~/.bashrc`)
+
+Add `/usr/local/go/bin` and `$HOME/go/bin` to your PATH:
+
+```bash
+# Append Go environment exports to ~/.bashrc
+echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Verify installation:
+
+```bash
+go version
+```
+
+### 3. Systemd ExecStart Resolution for Go Services
+
+Systemd units running compiled Go applications can execute the target binary directly without runtime interpreters:
+
+```ini
+ExecStart=/home/toni/go/bin/my-go-service
+```
+
+---
+
+## 🔑 Environment Variable Management
+
+Keep application secrets out of repository source code using system or project-level environment configuration.
+
+### 1. Project-Isolated `.env` Files
+
+Create a `.env` file in your application root directory:
+
+```ini
+PORT=3000
+DATABASE_URL="postgresql://user:pass@localhost:5432/mydb"
+SECRET_KEY="supersecretkeyhere"
+```
+
+### 2. System-Wide Environment Variables (`/etc/environment`)
+
+For variables shared across all services on the server:
+
+```bash
+# Edit system environment file
+sudo nano /etc/environment
+```
+
+Add global exports:
+
+```ini
+NODE_ENV="production"
+SERVER_REGION="helsinki-home"
+```
+
+---
+
+## Docker
+
+<Aside type="caution" title="Docker and UFW">
+  When you publish a container's ports using Docker, traffic to and from that container gets
+  diverted before it goes through the ufw firewall settings. Docker routes container traffic in the
+  nat table, which means that packets are diverted before it reaches the INPUT and OUTPUT chains
+  that ufw uses. Packets are routed before the firewall rules can be applied, effectively ignoring
+  your firewall configuration.
+</Aside>
+
+Run the following command to uninstall all conflicting packages:
+
+```bash
+sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc | cut -f1)
+```
+
+<Steps>
+1. Set up Docker's apt repository.
+    
+    ```bash
+    # Add Docker's official GPG key:
+    sudo apt update
+    sudo apt install ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add the repository to Apt sources:
+
+    sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+    Types: deb
+    URIs: https://download.docker.com/linux/ubuntu
+    Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+    Components: stable
+    Architectures: $(dpkg --print-architecture)
+    Signed-By: /etc/apt/keyrings/docker.asc
+    EOF
+
+    sudo apt update
+    ```
+
+2. Install the Docker packages.
+
+   ```bash
+   sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+   ```
+
+3. Verify installation
+
+   ```bash
+   sudo systemctl status docker
+   ```
+
+   ```bash
+   sudo docker run hello-world
+   ```
+
+</Steps>

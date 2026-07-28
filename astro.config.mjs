@@ -1,5 +1,6 @@
 import starlight from "@astrojs/starlight";
 import tailwindcss from "@tailwindcss/vite";
+import mermaid from "astro-mermaid";
 // @ts-check
 import { defineConfig } from "astro/config";
 
@@ -47,6 +48,10 @@ export default defineConfig({
           items: [{ autogenerate: { directory: "reference" } }],
         },
       ],
+    }),
+    mermaid({
+      theme: "neutral",
+      autoTheme: true,
     }),
   ],
 });

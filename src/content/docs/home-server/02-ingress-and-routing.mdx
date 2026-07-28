@@ -1,0 +1,359 @@
+---
+title: "02. Ingress & Domain Routing (Traffic)"
+description: Domain DNS configuration, Cloudflare API tokens, Caddy auto-HTTPS reverse proxy, Nginx, and Cloudflare Tunnels.
+sidebar:
+  order: 3
+---
+
+import { Aside, Badge, Card, CardGrid, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Static LAN IP (from Layer 1), Domain Name, Open
+    Router Ports (80/443) OR Cloudflare Tunnel daemon.
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Public HTTPS reverse proxy, automatic wildcard
+    SSL/TLS certificate renewal, subdomain routing to local app ports.
+  </p>
+</Aside>
+
+---
+
+## 🌟 Recommended Default Track: Caddy + Cloudflare DNS API
+
+Caddy is an ultra-lightweight web server that automatically provisions and renews Let's Encrypt / ZeroSSL HTTPS certificates using Cloudflare DNS API challenges.
+
+### 1. Cloudflare DNS API Token Setup
+
+To allow Caddy to request wildcard SSL certificates (`*.yourdomain.com`) without exposing DNS challenge ports:
+
+<Steps>
+
+1. Log into your Cloudflare Dashboard and navigate to **My Profile → API Tokens** (User API Tokens).
+2. Click **Create Token** and select the **Edit zone DNS** template.
+3. Verify that the token permissions include **both** required scopes:
+   - `Zone - DNS - Edit` (Allows creating/deleting `_acme-challenge` TXT records)
+   - `Zone - Zone - Read` (Allows Caddy to look up your domain's Zone ID)
+4. Under **Zone Resources**, select **Include → Specific zone → yourdomain.com**.
+5. Copy the generated API token (e.g. `cfut_xxx`).
+
+</Steps>
+
+---
+
+### 2. Caddy Build & Installation
+
+Standard pre-compiled Caddy binaries do not include DNS provider modules.
+
+To ensure systemd (`caddy.service`), permissions, and configuration directories (`/etc/caddy/`) are properly created, first install standard Caddy from official repositories, then build and replace the binary with the Cloudflare DNS module using `xcaddy`:
+
+```bash
+# For installing packages over https and security
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+
+# 2. Add official Caddy apt repository & install standard Caddy (provisions caddy.service)
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+sudo chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install -y caddy
+
+
+# 3. Add xcaddy builder repository & install xcaddy with Go
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-xcaddy-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-xcaddy.list
+sudo apt update && sudo apt install -y xcaddy golang
+
+# 4. Build custom Caddy binary with Cloudflare DNS plugin
+xcaddy build --with github.com/caddy-dns/cloudflare
+
+# 5. Overwrite system Caddy binary with plugin-enabled build
+sudo mv caddy /usr/bin/caddy
+sudo chmod +x /usr/bin/caddy
+```
+
+---
+
+### 3. Caddyfile Configuration
+
+Edit `/etc/caddy/Caddyfile`:
+
+```bash
+sudo nano /etc/caddy/Caddyfile
+```
+
+```ini
+{
+    email asd@qwerty.com
+    # Global options: Use Cloudflare DNS-01 challenge for all sites
+    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+}
+
+yourdomain.com {
+    reverse_proxy localhost:3000
+}
+
+# Subdomain routing
+app.yourdomain.com {
+    reverse_proxy localhost:3001
+}
+
+# static site
+site.yourdomain.com {
+    root * /srv/www/site
+    file_server
+    encode gzip
+}
+```
+
+<Aside type="tip" title="Per-Site TLS Syntax Alternative">
+  If you prefer defining DNS challenges per site instead of globally, use the `tls` block:
+  ```ini
+  app.yourdomain.com {
+      tls {
+          dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+      }
+      reverse_proxy localhost:3000
+  }
+  ```
+</Aside>
+
+Set environment variables in `/etc/systemd/system/caddy.service.d/override.conf`:
+
+<Aside type="caution" title="Important: [Service] Header Required">
+  Systemd override files require the `[Service]` section header on Line 1. Without `[Service]`,
+  systemd will ignore your environment variables with `Assignment outside of section. Ignoring`.
+</Aside>
+
+Create the override file with your Cloudflare API token:
+
+```bash
+# Create systemd override directory
+sudo mkdir -p /etc/systemd/system/caddy.service.d
+
+# Write systemd override file (ensure [Service] is on Line 1)
+sudo nano /etc/systemd/system/caddy.service.d/override.conf
+```
+
+```ini
+[Service]
+Environment="CLOUDFLARE_API_TOKEN=cfut_your_actual_token_here"
+```
+
+Reload systemd daemon and restart Caddy service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart caddy
+```
+
+---
+
+### 4. Dynamic DNS (DDNS): Auto-Updating Cloudflare IP
+
+Residential ISPs dynamically change your home router's public IPv4 address periodically. To ensure your domain always points to your server's current IP address, configure automated Dynamic DNS (DDNS).
+
+<Aside type="note" title="Cloudflare Tunnels Bypass DDNS Completely">
+  If you choose <strong>Alternative Branch 2 (Cloudflare Zero-Trust Tunnels)</strong> below, you do{" "}
+  <strong>NOT</strong> need DDNS! Cloudflare Tunnels establish outbound daemon tunnels directly to
+  Cloudflare's edge, eliminating the need for public IP DNS records or open router ports.
+</Aside>
+
+<Tabs>
+  <TabItem label="Option A: Native Bash Script + Cron (All A Records)">
+
+Create a script at `/usr/local/bin/cloudflare-ddns.sh` that automatically queries Cloudflare for **all `A` records** under your zone (`domain.com`, `ssh.domain.com`, `*.domain.com`) and updates them dynamically:
+
+```bash
+sudo nano /usr/local/bin/cloudflare-ddns.sh
+```
+
+Paste the following script (replace `ZONE_ID` and `API_TOKEN`):
+
+```bash
+#!/usr/bin/env bash
+# Cloudflare Multi-Record DDNS Auto-Updater
+ZONE_ID="your_cloudflare_zone_id"
+API_TOKEN="cfut_your_api_token"
+
+# Fetch current public IPv4 address
+CURRENT_IP=$(curl -s https://api.ipify.org)
+
+# Fetch all 'A' records for the zone and update each one
+curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?type=A" \
+     -H "Authorization: Bearer ${API_TOKEN}" \
+     -H "Content-Type: application/json" | \
+jq -r '.result[] | "\(.id) \(.name)"' | while read -r RECORD_ID RECORD_NAME; do
+    echo "Updating ${RECORD_NAME} (${RECORD_ID}) to ${CURRENT_IP}..."
+    curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
+         -H "Authorization: Bearer ${API_TOKEN}" \
+         -H "Content-Type: application/json" \
+         --data "{\"type\":\"A\",\"name\":\"${RECORD_NAME}\",\"content\":\"${CURRENT_IP}\",\"ttl\":1,\"proxied\":true}"
+done
+```
+
+Install `jq` (JSON parser), make the script executable, and schedule it via root cron:
+
+```bash
+sudo apt install -y jq
+sudo chmod +x /usr/local/bin/cloudflare-ddns.sh
+
+# Add cron job to run every 5 minutes
+(sudo crontab -l 2>/dev/null; echo "*/5 * * * * /usr/local/bin/cloudflare-ddns.sh > /dev/null 2>&1") | sudo crontab -
+```
+
+  </TabItem>
+
+  <TabItem label="Option B: Dockerized Cloudflare DDNS (Recommended)">
+
+If you deploy apps via Docker Compose, run the popular `favonia/cloudflare-ddns` container to automatically sync your public IP:
+
+```yaml
+services:
+  cloudflare-ddns:
+    image: favonia/cloudflare-ddns:latest
+    container_name: cloudflare-ddns
+    restart: always
+    environment:
+      - CLOUDFLARE_API_TOKEN=cfut_your_api_token
+      - DOMAINS=app.yourdomain.com,*.yourdomain.com
+      - PROXIED=true
+```
+
+Run the container:
+
+```bash
+docker compose up -d
+```
+
+  </TabItem>
+
+  <TabItem label="Option C: Native System Daemon (ddclient)">
+
+`ddclient` is a classic, lightweight background Linux service that manages DDNS updates automatically without requiring Docker or custom bash scripts.
+
+1. **Install `ddclient`:**
+
+   ```bash
+   sudo apt update && sudo apt install -y ddclient
+   ```
+
+2. **Configure `/etc/ddclient.conf`:**
+
+   ```bash
+   sudo nano /etc/ddclient.conf
+   ```
+
+   Paste the following configuration (replace `yourdomain.com` and `cfut_your_api_token`):
+
+   ```ini
+   daemon=300                          # Check IP every 300 seconds (5 minutes)
+   syslog=yes                          # Log update activity to syslog
+   pid=/var/run/ddclient.pid
+   ssl=yes
+   use=web, web=ipify-ipv4  # IP discovery web service
+
+   protocol=cloudflare
+   zone=yourdomain.com
+   login=token                         # Instructs ddclient to use Cloudflare API Token
+   password=cfut_your_api_token
+   app.yourdomain.com, *.yourdomain.com
+   ```
+
+3. **Restart Service & Test Sync Output:**
+
+   ```bash
+   # Restart background systemd daemon
+   sudo systemctl restart ddclient
+
+   # Force an immediate dry-run update to inspect debug logs
+   sudo ddclient -verbose -noquiet
+   ```
+
+  </TabItem>
+</Tabs>
+
+---
+
+## 🔀 Alternative Branch 1: Traditional Nginx Reverse Proxy
+
+If you prefer traditional Nginx configuration files and Certbot SSL certificate management:
+
+### 1. Install Nginx & Certbot
+
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+```
+
+### 2. Configure Nginx Server Block
+
+Edit `/etc/nginx/sites-available/app.yourdomain.com`:
+
+```nginx
+server {
+    listen 80;
+    server_name app.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Enable site link and test configuration:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/app.yourdomain.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 3. Issue SSL Certificate via Certbot
+
+```bash
+sudo certbot --nginx -d app.yourdomain.com
+```
+
+---
+
+## 🛡️ Alternative Branch 2: Cloudflare Zero-Trust Tunnels (`cloudflared`)
+
+If your ISP blocks incoming ports 80/443 or you want to avoid port forwarding entirely, use Cloudflare Zero-Trust Tunnels.
+
+### 1. Install `cloudflared` Daemon
+
+```bash
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared.deb
+```
+
+### 2. Authenticate & Create Tunnel
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create homeserver-tunnel
+```
+
+### 3. Configure Tunnel Routing (`~/.cloudflared/config.yml`)
+
+```yaml
+tunnel: <TUNNEL_UUID>
+credentials-file: /root/.cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: app.yourdomain.com
+    service: http://localhost:3000
+  - service: http_status:404
+```
+
+Route DNS and run as a system service:
+
+```bash
+cloudflared tunnel route dns homeserver-tunnel app.yourdomain.com
+sudo cloudflared service install
+```

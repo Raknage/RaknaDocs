@@ -1,0 +1,245 @@
+---
+title: "05. GitHub Actions & CI/CD Pipelines"
+description: Automated deployment strategies for static Astro sites and web applications using GitHub Actions, SSH, Self-Hosted Runners, and PR preview deployments.
+sidebar:
+  order: 6
+---
+
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Git repository (GitHub), target web runtime / host
+    directory (Layer 3), and SSH key or GitHub Actions runner.
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Automated build & deploy pipelines on `git push`,
+    static site syncing, and dynamic PR preview environments.
+  </p>
+</Aside>
+
+---
+
+## 🚀 Strategy 1: Build in GitHub Actions & Sync `dist/` to Host
+
+For static site generators like **Astro**, offloading the `pnpm build` process to GitHub's free runners saves home server CPU and RAM. Once built, only the generated `dist/` directory is synced over SSH to the server's web root.
+
+### 1. GitHub Actions Workflow (`.github/workflows/deploy-static.yml`)
+
+```yaml
+name: Deploy Static Astro Site
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Static Site
+        run: pnpm build
+
+      - name: Sync dist/ to Home Server via SSH
+        uses: easingthemes/ssh-deploy-5.5@v4
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.SERVER_IP }}
+          REMOTE_USER: toni
+          SOURCE: "dist/"
+          TARGET: "/srv/www/raknaDocs"
+          ARGS: "-avz --delete"
+```
+
+### 2. Host Caddy Configuration (`/etc/caddy/Caddyfile`)
+
+```ini
+docs.example.com {
+    root * /srv/www/raknaDocs
+    file_server
+}
+```
+
+---
+
+## ⚡ Strategy 2: GitHub Actions + Self-Hosted Runner
+
+A **Self-Hosted Runner** runs directly on your home server host. It polls GitHub securely via outbound HTTPS, eliminating the need to expose SSH ports or create firewall rules.
+
+<Steps>
+
+1. **Register the Runner on Host Server**
+   Navigate to your GitHub Repo -> **Settings** -> **Actions** -> **Runners** -> **New self-hosted runner** and run the provided setup commands:
+
+   ```bash
+   # Create a folder
+   mkdir actions-runner && cd actions-runner
+
+   # Download the latest runner package
+   curl -o actions-runner-linux-x64-2.336.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz
+
+   # Extract the installer
+   tar xzf ./actions-runner-linux-x64-2.336.0.tar.gz
+
+   # Configure the runner with repository URL and token
+   ./config.sh --url https://github.com/yourusername/raknaDocs --token YOUR_TOKEN
+
+   # Install as background systemd service
+   sudo ./svc.sh install
+   sudo ./svc.sh start
+   ```
+
+2. **Self-Hosted Workflow (`.github/workflows/deploy.yml`)**
+
+   ```yaml
+   name: Self-Hosted Deploy
+
+   on:
+     push:
+       branches: [main]
+
+   jobs:
+     deploy:
+       runs-on: self-hosted
+       steps:
+         - name: Checkout Code
+           uses: actions/checkout@v4
+
+         - name: Build & Deploy Locally
+           run: |
+             pnpm install --frozen-lockfile
+             pnpm build
+             rsync -avz --delete dist/ /srv/www/raknaDocs/
+   ```
+
+</Steps>
+
+---
+
+## 🔑 Strategy 3: GitHub Actions + SSH Remote Execution
+
+For executing remote shell commands directly on your home server (e.g., pulling code, reloading systemd services, or updating container stacks) from GitHub Actions.
+
+### Workflow Configuration (`.github/workflows/deploy-ssh.yml`)
+
+```yaml
+name: Remote SSH Deployment
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: toni
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /srv/www/raknaDocs
+            git pull origin main
+            pnpm install --frozen-lockfile
+            pnpm build
+            sudo systemctl reload caddy
+```
+
+---
+
+## 🔍 Strategy 4: GitHub CI Preview Deployments (Pull Requests)
+
+Preview deployments allow you to test changes on every Pull Request before merging to `main`. On PR creation or updates, GitHub Actions builds the preview site and deploys it to a dedicated subpath (e.g., `docs.example.com/previews/pr-12`).
+
+### 1. PR Preview Build Workflow (`.github/workflows/pr-preview.yml`)
+
+```yaml
+name: Deploy PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build --base /previews/pr-${{ github.event.number }}/
+
+      - name: Deploy Preview Artifacts
+        uses: easingthemes/ssh-deploy-5.5@v4
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.SERVER_IP }}
+          REMOTE_USER: toni
+          SOURCE: "dist/"
+          TARGET: "/srv/www/raknaDocs/previews/pr-${{ github.event.number }}"
+          ARGS: "-avz --delete"
+
+      - name: Comment Preview Link on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const previewUrl = `https://docs.example.com/previews/pr-${prNumber}/`;
+            github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 **Preview Deployment Ready!**\n\nPreview your changes here: [${previewUrl}](${previewUrl})`
+            });
+```
+
+### 2. PR Cleanup Workflow (`.github/workflows/pr-cleanup.yml`)
+
+Automatically clean up preview files when a Pull Request is closed or merged:
+
+```yaml
+name: Cleanup PR Preview
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove PR Preview Directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: toni
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            rm -rf /srv/www/raknaDocs/previews/pr-${{ github.event.number }}
+```

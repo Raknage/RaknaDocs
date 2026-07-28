@@ -1,0 +1,281 @@
+---
+title: SSH Keys & Configuration Reference Guide
+description: Comprehensive reference and field guide for SSH key generation, multi-key config routing, dual-boot host key synchronisation, and diagnostic error resolution.
+---
+
+import { Aside, Badge, Card, CardGrid, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+A complete reference and operational guide for OpenSSH key management, `~/.ssh/config` multi-identity routing, dual-boot host key synchronisation, and connection diagnostics.
+
+<Aside type="note" title="Quick Reference Summary">
+  - **Recommended Key Type:** **Ed25519** (`ssh-keygen -t ed25519`) for optimal security and performance.
+  - **Multi-Identity Configuration:** Use `~/.ssh/config` with `IdentitiesOnly yes` to route distinct keys to identical host addresses or domains.
+  - **Host Key Mismatch Resolution:** Run `ssh-keygen -R <hostname-or-ip>` to purge obsolete fingerprints from `~/.ssh/known_hosts`.
+</Aside>
+
+---
+
+## ⚡ Part 1: Quick Command & Utility Reference
+
+### 1. Common SSH CLI Commands
+
+| Command       | Purpose                                                | Key Flags & Parameters                                |
+| :------------ | :----------------------------------------------------- | :---------------------------------------------------- |
+| `ssh-keygen`  | Generate, manage, and convert authentication keys      | `-t <algo>`, `-b <bits>`, `-C <comment>`, `-R <host>` |
+| `ssh-copy-id` | Install public key onto remote `authorized_keys`       | `-i <path/to/key.pub>`, `-p <port>`                   |
+| `ssh-agent`   | Holds private keys used for single sign-on             | `-s` (generate shell commands)                        |
+| `ssh-add`     | Add private key identities to the authentication agent | `-l` (list keys), `-D` (delete all), `-t <life>`      |
+| `ssh`         | OpenSSH SSH client program                             | `-i <key>`, `-p <port>`, `-v`/`-vvv` (verbose debug)  |
+
+### 2. Key Algorithm Specifications
+
+| Algorithm   | Key Length       | Security Status                        | Usage Recommendation                                         |
+| :---------- | :--------------- | :------------------------------------- | :----------------------------------------------------------- |
+| **Ed25519** | Fixed 256 bits   | High (Edwards-curve Digital Signature) | **Recommended** (Standard for modern deployments)            |
+| **RSA**     | 2048 – 4096 bits | Moderate to High (4096-bit required)   | Legacy compatibility only (SHA-1 disabled in modern OpenSSH) |
+| **ECDSA**   | 256 – 521 bits   | High (NIST Curves)                     | Avoid if possible (NIST curve distrust concerns)             |
+
+---
+
+## 🔑 Part 2: Key Generation & Initial Setup
+
+### 1. Generating Key Pairs
+
+<Tabs>
+  <TabItem label="Ed25519 (Recommended)">
+    ```bash
+    # Generate an Ed25519 key pair with identity comment
+    ssh-keygen -t ed25519 -C "user@hostname"
+    ```
+    - **Private key:** `~/.ssh/id_ed25519`
+    - **Public key:** `~/.ssh/id_ed25519.pub`
+  </TabItem>
+
+  <TabItem label="RSA (Legacy Fallback)">
+    ```bash
+    # Generate a 4096-bit RSA key pair for legacy hosts
+    ssh-keygen -t rsa -b 4096 -C "user@hostname"
+    ```
+    - **Private key:** `~/.ssh/id_rsa`
+    - **Public key:** `~/.ssh/id_rsa.pub`
+  </TabItem>
+</Tabs>
+
+### 2. Deploying Public Keys
+
+To authenticate without passwords, append the **public key** (`.pub`) to `~/.ssh/authorized_keys` on the target system.
+
+<Tabs>
+  <TabItem label="POSIX Systems (Linux / macOS / Git Bash)">
+    ```bash
+    # Deploy default key
+    ssh-copy-id user@192.168.1.105
+
+    # Deploy specific custom key
+    ssh-copy-id -i ~/.ssh/id_ed25519_custom.pub user@192.168.1.105
+    ```
+
+  </TabItem>
+
+  <TabItem label="Windows PowerShell">
+    ```powershell
+    # Pipe public key content into target authorized_keys file
+    cat ~/.ssh/id_ed25519.pub | ssh user@192.168.1.105 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+    ```
+  </TabItem>
+</Tabs>
+
+### 3. File Permissions Matrix
+
+Strict file permissions are enforced by the OpenSSH server daemon (`sshd`). Connections are rejected if permissions are overly permissive.
+
+| Path                     | Required Octal | Permission Symbol | Scope                              |
+| :----------------------- | :------------- | :---------------- | :--------------------------------- |
+| `~/.ssh/` directory      | `700`          | `rwx------`       | User read, write, execute only     |
+| `~/.ssh/authorized_keys` | `600`          | `rw-------`       | User read and write only           |
+| Private keys (`id_*`)    | `600`          | `rw-------`       | User read and write only           |
+| Public keys (`id_*.pub`) | `644`          | `rw-r--r--`       | User read/write, group/others read |
+
+---
+
+## 🎛️ Part 3: Configuration Directives & Multi-Key Routing (`~/.ssh/config`)
+
+The `~/.ssh/config` file customises connection parameters and routes specific key identities to target hosts.
+
+### 1. Essential Directives Reference
+
+| Directive               | Type      | Description                                                  | Accepted Values / Example                 |
+| :---------------------- | :-------- | :----------------------------------------------------------- | :---------------------------------------- |
+| `Host`                  | Pattern   | Entry pattern or alias matching user input                   | `Host server-admin` or `Host 192.168.1.*` |
+| `HostName`              | String    | Real domain name or IP address of the target                 | `HostName 192.168.1.105`                  |
+| `User`                  | String    | Remote user account name                                     | `User root`                               |
+| `Port`                  | Integer   | Remote SSH service port (default: `22`)                      | `Port 2222`                               |
+| `IdentityFile`          | File Path | Absolute or relative path to private key                     | `IdentityFile ~/.ssh/id_ed25519_admin`    |
+| `IdentitiesOnly`        | Enum      | Restrict authentication strictly to specified `IdentityFile` | `yes` \| `no` (Default: `no`)             |
+| `StrictHostKeyChecking` | Enum      | Behaviour when remote host key is unknown or changed         | `accept-new` \| `yes` \| `no` \| `ask`    |
+| `UserKnownHostsFile`    | File Path | Path to custom known hosts database                          | `UserKnownHostsFile ~/.ssh/known_hosts`   |
+
+### 2. Multi-Key Routing Patterns
+
+#### How to assign multiple keys to the same IP address:
+
+If a target machine (`192.168.1.105`) requires distinct identities for different tasks:
+
+```ini
+# Identity 1: Primary Administrative User
+Host server-admin
+    HostName 192.168.1.105
+    User toni
+    IdentityFile ~/.ssh/id_ed25519_admin
+    IdentitiesOnly yes
+
+# Identity 2: Automated Backup User
+Host server-backup
+    HostName 192.168.1.105
+    User backupuser
+    IdentityFile ~/.ssh/id_ed25519_backup
+    IdentitiesOnly yes
+```
+
+- Execute `ssh server-admin` to authenticate as `toni` via `id_ed25519_admin`.
+- Execute `ssh server-backup` to authenticate as `backupuser` via `id_ed25519_backup`.
+
+<Aside type="caution" title="Preventing Authentication Failures">
+  OpenSSH sequentially tests every key loaded in `ssh-agent`. If numerous keys are loaded, remote
+  servers will disconnect with `Too many authentication failures`. Setting `IdentitiesOnly yes`
+  limits key offers strictly to the designated `IdentityFile`.
+</Aside>
+
+#### How to manage multiple accounts on a single domain (GitHub / GitLab):
+
+```ini
+# Personal Account
+Host github.com-personal
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_personal
+    IdentitiesOnly yes
+
+# Work Account
+Host github.com-work
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_work
+    IdentitiesOnly yes
+```
+
+**Git Remote Configuration:**
+
+```bash
+# Clone personal repository
+git clone git@github.com-personal:username/personal-repo.git
+
+# Clone work repository
+git clone git@github.com-work:company/work-repo.git
+```
+
+---
+
+## 🔀 Part 4: Dual-Boot & Multi-OS Host Setup Solutions
+
+Operating systems coexisting on the same physical host generate unique SSH host keys upon installation. This section details how to manage fingerprint changes seamlessly across dual-boot environments.
+
+### 1. Server-Side Host Key Synchronisation
+
+**Condition:** Multiple operating systems are installed on the target server machine (`192.168.1.105`).
+
+<Steps>
+1. **Synchronise Server Host Keys across OS Instances (Recommended)**
+
+    Ensure both operating system installations share identical host key credentials:
+
+    ```bash
+    # Copy host key files from OS A to OS B into /etc/ssh/
+    sudo cp /path/to/os_a/etc/ssh/ssh_host_ed25519_key* /etc/ssh/
+    sudo chmod 600 /etc/ssh/ssh_host_ed25519_key
+    sudo chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
+    sudo systemctl restart sshd
+    ```
+
+2. **Automate Key Acceptance via Client Configuration**
+
+   If key synchronisation cannot be performed, configure the client to auto-accept modified fingerprints for trusted LAN IP addresses:
+
+   ```ini
+   Host 192.168.1.105 home-server
+       HostName 192.168.1.105
+       StrictHostKeyChecking accept-new
+   ```
+
+</Steps>
+
+### 2. Client Workstation Key Management
+
+If your local workstation dual-boots Windows and Linux:
+
+- **Shared Key Pair:** Copy `id_ed25519` and `id_ed25519.pub` between Windows (`C:\Users\<user>\.ssh\`) and Linux (`~/.ssh/`).
+- **Independent Key Pairs:** Maintain distinct keys per client OS (`id_ed25519_win` and `id_ed25519_linux`) and register both public keys in the target server's `~/.ssh/authorized_keys`:
+
+```text
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... toni-windows-workstation
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... toni-linux-workstation
+```
+
+---
+
+## 🛠️ Part 5: Diagnostic & Error Resolution Reference
+
+### 1. `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!`
+
+#### Error Signature:
+
+```text
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Offending ED25519 key in /home/user/.ssh/known_hosts:8
+Host key verification failed.
+```
+
+#### Cause:
+
+The remote host presented a fingerprint that differs from the entry recorded in `~/.ssh/known_hosts`. Occurs during server OS reinstallations, dual-boot switches, or IP reallocation.
+
+#### Resolution:
+
+```bash
+# Purge the stored host key for the target IP or domain
+ssh-keygen -R 192.168.1.105
+
+# Re-establish connection and verify new fingerprint
+ssh user@192.168.1.105
+```
+
+### 2. `Permission denied (publickey)`
+
+#### Troubleshooting Checklist:
+
+1. Confirm the public key resides within target user's `~/.ssh/authorized_keys`.
+2. Verify remote permissions: `chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys`.
+3. Inspect offered identities using maximum verbosity:
+   ```bash
+   ssh -vvv user@192.168.1.105
+   ```
+   Examine output lines containing `debug1: Offering public key:` to trace key selection.
+
+### 3. SSH Agent Operations
+
+```bash
+# Initialise ssh-agent for current shell session
+eval "$(ssh-agent -s)"
+
+# Load private key identity into memory
+ssh-add ~/.ssh/id_ed25519
+
+# Query active identities in agent memory
+ssh-add -l
+
+# Flush all identities from agent memory
+ssh-add -D
+```

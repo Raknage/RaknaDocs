@@ -1,122 +1,293 @@
 ---
 title: "04. Data Layer & Persistence"
-description: Database architecture strategies comparing bare-metal installations vs containerized Docker volumes.
+description: Containerized databases with Docker volumes vs bare-metal Postgres/MariaDB, and automated CRON backups.
 sidebar:
   order: 5
 ---
 
-import { Card, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
-This guide outlines your database architecture choices: running database engines directly on host bare-metal versus running them in containerized Docker volumes.
-
----
-
-## 🗄 Choose Your Database Architecture
-
-<Tabs>
-  <TabItem label="Option A: Bare-Metal Database">
-
-    ### Running PostgreSQL / MySQL Directly on Host OS
-
-    Best for max performance, low container overhead, and serving multiple applications (both bare-metal and containerized) from a centralized local database server.
-
-    #### 1. PostgreSQL Bare-Metal Installation
-
-    ```bash
-    # Install PostgreSQL
-    sudo apt update && sudo apt install -y postgresql postgresql-contrib
-
-    # Start and enable service
-    sudo systemctl enable --now postgresql
-
-    # Create database user & database
-    sudo -u postgres psql -c "CREATE USER appuser WITH PASSWORD 'securepassword';"
-    sudo -u postgres psql -c "CREATE DATABASE appdb OWNER appuser;"
-    ```
-
-    #### 2. Configuring Host Network Listening
-
-    By default, PostgreSQL listens only on `localhost` (`127.0.0.1`). To allow local Docker containers or LAN apps to connect:
-
-    Edit `/etc/postgresql/16/main/postgresql.conf`:
-    ```text
-    listen_addresses = 'localhost, 172.17.0.1, 192.168.1.100'
-    ```
-
-    Edit `/etc/postgresql/16/main/pg_hba.conf`:
-    ```text
-    # Allow local Docker containers (docker0 subnet)
-    host    appdb           appuser         172.17.0.0/16           scram-sha-256
-    ```
-
-    Reload PostgreSQL:
-    ```bash
-    sudo systemctl reload postgresql
-    ```
-
-  </TabItem>
-  <TabItem label="Option B: Containerized Database">
-
-    ### Running Databases in Docker Volumes
-
-    Best for isolated per-application stacks (e.g., WordPress + MySQL), easy destruction/recreation, and zero host system package dependencies.
-
-    #### Docker Compose Database Stack (`docker-compose.db.yml`)
-
-    ```yaml
-    version: '3.8'
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        container_name: postgres_db
-        restart: always
-        environment:
-          POSTGRES_DB: appdb
-          POSTGRES_USER: appuser
-          POSTGRES_PASSWORD: securepassword
-        ports:
-          - "5432:5432"
-        volumes:
-          - pgdata:/var/lib/postgresql/data
-        networks:
-          - backend
-
-    volumes:
-      pgdata:
-        driver: local
-
-    networks:
-      backend:
-        driver: bridge
-    ```
-
-  </TabItem>
-</Tabs>
+<Aside type="note" title="Layer Contract Card">
+  <p>
+    <Badge text="Requires" variant="caution" /> Storage disk partition or directory mount
+    (`/var/lib` or `/data`).
+  </p>
+  <p>
+    <Badge text="Provides" variant="success" /> Database engine connection URIs, persistent storage
+    volumes, and automated database dump backups.
+  </p>
+</Aside>
 
 ---
 
-## 💾 Storage Mounting & Persistent Disks
+## 📊 Architectural Comparison: Docker Container vs. Bare-Metal Database
 
-When mounting external hard drives or secondary SSDs for databases or Docker storage:
+Before choosing your deployment model, consider the trade-offs:
+
+| Feature / Consideration    | 🐳 Containerized Database (Docker Volume)                                          | 🖥️ Bare-Metal Database (`apt`)                                      |
+| :------------------------- | :--------------------------------------------------------------------------------- | :------------------------------------------------------------------ |
+| **Setup & Isolation**      | **Best:** Zero host package pollution; isolated in Docker container.               | **Complex:** Scatters files across `/var/lib`, `/etc`, `/usr/lib`.  |
+| **Version Upgrades**       | **Instant:** Change image tag (`postgres:16` → `postgres:17`).                     | **Manual:** Tied to Ubuntu `apt` repo releases; manual migration.   |
+| **Multi-Instance Support** | **Trivial:** Run Postgres 15, 16, and PGVector on different ports.                 | **Complex:** Requires manual cluster creation (`pg_createcluster`). |
+| **Compose Integration**    | **Native:** Boot app + DB + Redis together in 1 `docker-compose.yml`.              | **Separate:** Database managed outside Compose stack.               |
+| **Disk I/O Overhead**      | **Zero Impact:** Host volume mount (`-v /srv/postgres:...`) bypasses Docker layer. | **Zero Impact:** Native host disk write performance.                |
+| **System Boot Order**      | Requires Docker daemon (`dockerd`) to be active.                                   | Starts immediately during early systemd boot.                       |
+
+<Aside type="tip" title="Do I store the actual data in the same place in either case?">
+  **YES! Absolutely.**
+  
+  Whether running PostgreSQL inside Docker or natively on bare metal, **the actual database data files are stored in the exact same directory on your host SSD**:
+  - **In Docker:** You pass a host volume mount: `-v /srv/postgres:/var/lib/postgresql/data`.
+  - **In Bare Metal:** You set `data_directory = '/srv/postgres'` in `/etc/postgresql/16/main/postgresql.conf`.
+
+In both setups, data files reside in **`/srv/postgres`** on your BTRFS `@postgres` subvolume with `chattr +C` (NOCOW) enabled.
+
+</Aside>
+
+---
+
+## 📂 Server Directory Storage Matrix: What Goes Where?
+
+To ensure data persistence, clean backups, and optimal BTRFS performance, separate your storage locations by purpose:
+
+| Directory             | Purpose / Belongings                                                                                                     | Examples & Use Cases                                                       | BTRFS Mode                       |
+| :-------------------- | :----------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- | :------------------------------- |
+| **`/home/$USER`**     | **Developer Source Code & Tools:** Custom Git repositories, dotfiles, and SSH keys.                                      | `~/projects/my-app/`<br/>`~/.ssh/id_ed25519`                               | Standard CoW (`compress=zstd:3`) |
+| **`/srv/docker`**     | **Persistent Application Stacks:** Your `docker-compose.yml` stacks, `.env` files, and app volume mounts.                | `/srv/docker/caddy/docker-compose.yml`<br/>`/srv/docker/uptime-kuma/data/` | Standard CoW (`compress=zstd:3`) |
+| **`/srv/postgres`**   | **Database Storage:** High IOPS random write database files (PostgreSQL, MariaDB, SQLite).                               | PostgreSQL data directory<br/>`/var/lib/postgresql/data`                   | **`NOCOW` (`sudo chattr +C`)**   |
+| **`/srv/www`**        | **Static Web Assets:** Built frontend static HTML/CSS/JS artifacts served by Caddy or Nginx.                             | `/srv/www/docs/index.html`<br/>`/srv/www/portfolio/dist/`                  | Standard CoW (`compress=zstd:3`) |
+| **`/var/lib/docker`** | **Docker Engine Internals (Ephemeral):** Downloaded image layers, container overlays, build cache. Managed by `dockerd`. | Managed automatically by Docker daemon.                                    | Standard CoW                     |
+
+> 💡 **Where should custom code live?**
+>
+> - **Self-Hosted / Third-Party Apps (e.g. Caddy, Uptime Kuma):** Place directly in `/srv/docker/<app-name>/`.
+> - **Custom Repositories You Develop:** Keep source code in `/home/$USER/projects/<app-name>/` (containing your `Dockerfile` & `docker-compose.yml`), and mount persistent uploads/database outputs to `/srv/docker` or `/srv/postgres`.
+
+---
+
+## 🌟 Recommended Default Track: Containerized Database via Docker Volumes
+
+Running database engines inside Docker containers with host-bound volume mounts provides simple upgrading, clean isolation, and zero host pollution.
+
+### 1. PostgreSQL Container with Host Volume Mount
+
+<Aside type="caution" title="BTRFS Copy-on-Write (CoW) & Database Storage Performance">
+  <p><Badge text="Critical Performance Gotcha" variant="danger" /> Default BTRFS Copy-on-Write (CoW) causes severe database file fragmentation and write latency!</p>
+
+Because database engines (PostgreSQL, MariaDB, SQLite) perform heavy random 8KB page writes to data files, BTRFS Copy-on-Write forces modified blocks to be written to new locations on disk. Over time, this leads to **extreme disk fragmentation** and write performance degradation.
+
+**The Solution (NOCOW / `chattr +C`):**
+Disable Copy-on-Write (`NOCOW`) on your database storage directories **BEFORE** creating database files or launching database containers.
 
 ```bash
-# Identify disk UUID
-sudo blkid /dev/sdb1
+# 1. Create empty host database directory
+sudo mkdir -p /srv/postgres
 
-# Create mount directory
-sudo mkdir -p /mnt/storage
+# 2. Disable Copy-on-Write (+C flag) BEFORE populating files
+sudo chattr +C /srv/postgres
 
-# Add entry to /etc/fstab for auto-mounting on boot
-# UUID=xxxx-xxxx-xxxx  /mnt/storage  ext4  defaults,noatime  0  2
+# 3. Verify NOCOW attribute (+C is active)
+lsattr -d /srv/postgres
+# Expected output: ---------------C------ /srv/postgres
+```
+
+> ⚠️ _Important ([Arch Wiki Btrfs Guide](https://wiki.archlinux.org/title/Btrfs#Copy-on-Write_(CoW))): `chattr +C` ONLY takes effect when executed on an **EMPTY directory** BEFORE files are created. Setting `chattr +C` on an existing folder with files does NOT disable CoW for those existing files.\_
+
+</Aside>
+
+Create your persistent NOCOW database directory and start PostgreSQL 16 container:
+
+```bash
+sudo mkdir -p /srv/postgres
+sudo chattr +C /srv/postgres
+sudo chown -R $USER:$USER /srv/postgres
+
+docker run -d \
+  --name postgres-db \
+  --restart always \
+  -e POSTGRES_USER=appuser \
+  -e POSTGRES_PASSWORD=securepassword \
+  -e POSTGRES_DB=appdb \
+  -v /srv/postgres:/var/lib/postgresql/data \
+  -p 5432:5432 \
+  postgres:16-alpine
 ```
 
 ---
 
-## ➡️ Next Step Choices
+### 2. MariaDB / MySQL Container
 
-Select your overall application deployment model:
+```bash
+sudo mkdir -p /srv/mariadb
+sudo chattr +C /srv/mariadb
+sudo chown -R $USER:$USER /srv/mariadb
 
-- [Path A: Bare-Metal Systemd Deployments →](/home-server/05-deployment-strategies#branch-a-bare-metal-systemd-deployment)
-- [Path B: Fully Containerized Docker Compose Stacks →](/home-server/05-deployment-strategies#branch-b-fully-containerized-docker-deployment)
-- [Path C: Hybrid Architecture (Bare-Metal DB + Container Apps) →](/home-server/05-deployment-strategies#branch-c-hybrid-architecture)
+docker run -d \
+  --name mariadb-db \
+  --restart always \
+  -e MYSQL_ROOT_PASSWORD=rootpassword \
+  -e MYSQL_DATABASE=wordpress \
+  -e MYSQL_USER=wpuser \
+  -e MYSQL_PASSWORD=wppassword \
+  -v /srv/mariadb:/var/lib/mysql \
+  -p 3306:3306 \
+  mariadb:11
+```
+
+---
+
+### 3. Valkey / Redis Containerized Cache Layer
+
+For session management, job queues (e.g., BullMQ, Celery), and application caching (e.g., Nextcloud, WordPress), deploy Valkey (an open-source Redis fork) or Redis with persistent volume storage:
+
+```bash
+sudo mkdir -p /srv/redis
+sudo chattr +C /srv/redis
+sudo chown -R $USER:$USER /srv/redis
+
+docker run -d \
+  --name redis-cache \
+  --restart always \
+  -v /srv/redis:/data \
+  -p 6379:6379 \
+  valkey/valkey:8-alpine \
+  valkey-server --appendonly yes
+```
+
+---
+
+### 4. SQLite Optimization on BTRFS
+
+For lightweight web apps and microservices using SQLite (e.g., Vaultwarden, Uptime Kuma):
+
+1. **NOCOW Storage:** Place `.sqlite` or `.db` files inside a directory configured with `chattr +C`.
+2. **Write-Ahead Logging (WAL):** Enable WAL mode to allow concurrent readers while writing, significantly improving performance and reducing lock contention:
+
+```sql
+-- Execute inside your SQLite connection
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+```
+
+---
+
+## 🖥️ Alternative Branch: Bare-Metal Database Services
+
+If you prefer installing database servers directly on the Ubuntu host OS for raw performance without container overhead:
+
+### 1. Install Bare-Metal PostgreSQL
+
+```bash
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+```
+
+### 2. Configure Access Rules & Networking (`pg_hba.conf`)
+
+By default, PostgreSQL listens only on `127.0.0.1`.
+
+To allow local Docker containers or internal LAN machines to connect, edit `/etc/postgresql/16/main/postgresql.conf`:
+
+```ini
+listen_addresses = '*'
+```
+
+Configure authentication rules in `/etc/postgresql/16/main/pg_hba.conf`:
+
+```ini
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    appdb           appuser         192.168.1.0/24          scram-sha-256
+```
+
+Restart PostgreSQL:
+
+```bash
+sudo systemctl restart postgresql
+```
+
+---
+
+## 💾 Automated Database Backups & Restoration Verification
+
+Never rely on BTRFS snapshots alone for database backups because live database files may be in an inconsistent state during a snapshot. Always maintain automated SQL dumps.
+
+### 1. PostgreSQL Automated Backup Script (`backup-postgres.sh`)
+
+Create `/home/toni/scripts/backup-postgres.sh`:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+BACKUP_DIR="/home/toni/backups/postgres"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+mkdir -p "$BACKUP_DIR"
+
+# Execute pg_dump inside container
+docker exec postgres-db pg_dump -U appuser appdb | gzip > "$BACKUP_DIR/appdb_$TIMESTAMP.sql.gz"
+
+# Delete backups older than 14 days
+find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +14 -delete
+
+echo "[$(date)] Backup completed: appdb_$TIMESTAMP.sql.gz"
+```
+
+Make executable:
+
+```bash
+chmod +x /home/toni/scripts/backup-postgres.sh
+```
+
+### 2. Schedule via CRON
+
+Edit crontab:
+
+```bash
+crontab -e
+```
+
+Add daily 2:00 AM backup entry:
+
+```bash
+0 2 * * * /home/toni/scripts/backup-postgres.sh >> /home/toni/backups/backup.log 2>&1
+```
+
+---
+
+### 3. Database Restoration Verification
+
+A backup is unverified until you test restoring it! To restore a PostgreSQL compressed database dump into a containerized instance:
+
+```bash
+# 1. Create a fresh test database inside the container
+docker exec -it postgres-db psql -U appuser -d postgres -c "CREATE DATABASE restore_test;"
+
+# 2. Decompress and pipe the backup SQL into the target database
+gunzip -c /home/toni/backups/postgres/appdb_20260727_020000.sql.gz | docker exec -i postgres-db psql -U appuser -d restore_test
+
+# 3. Verify tables and record counts
+docker exec -it postgres-db psql -U appuser -d restore_test -c "\dt"
+
+# 4. Clean up test database after verification
+docker exec -it postgres-db psql -U appuser -d postgres -c "DROP DATABASE restore_test;"
+```
+
+For MariaDB:
+
+```bash
+gunzip -c /home/toni/backups/mariadb/wordpress_20260727.sql.gz | docker exec -i mariadb-db mariadb -u wpuser -pwppassword wordpress
+```
+
+---
+
+## 🧪 Live Validation & Verification Checklist (`neuromancer`)
+
+Run through this interactive checklist on your server to verify Layer 4 setup:
+
+| Step                   | Command / Task                                    | Verification Criteria                                    | Status     |
+| :--------------------- | :------------------------------------------------ | :------------------------------------------------------- | :--------- |
+| **1. NOCOW Attribute** | `lsattr -d /srv/postgres /srv/mariadb /srv/redis` | Must show `---------------C------` for all folders       | ⏳ Pending |
+| **2. Active Mounts**   | `findmnt -t btrfs`                                | `/srv/postgres` active on BTRFS subvolume `@postgres`    | ⏳ Pending |
+| **3. Postgres Health** | `docker exec postgres-db pg_isready -U appuser`   | Output: `accepting connections`                          | ⏳ Pending |
+| **4. Database Backup** | `/home/toni/scripts/backup-postgres.sh`           | `.sql.gz` file created in `/home/toni/backups/postgres/` | ⏳ Pending |
+| **5. Restore Test**    | Pipe backup into `restore_test` DB                | Tables created cleanly with zero SQL errors              | ⏳ Pending |
