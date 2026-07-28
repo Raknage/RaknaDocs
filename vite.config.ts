@@ -21,4 +21,16 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
     plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
   },
+  run: {
+    tasks: {
+      vp_build: {
+        command: "astro build",
+        dependsOn: ["vp_check"],
+      },
+      vp_check: {
+        command: "astro check && vp check --fix && prettier --write **/*.astro",
+      },
+    },
+    // cache: { scripts: true },
+  },
 });

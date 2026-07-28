@@ -12,8 +12,11 @@ jobs:
         with:
           ref: main
 
-      - name: Build & Deploy Locally
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+          run-install: true
+
+      - run: |
+          vp run vp_build
           rsync -avz --delete dist/ /srv/www/raknaDocs/
