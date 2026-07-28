@@ -1,0 +1,11 @@
+name: Self-Hosted Deploy
+
+on:
+  push:
+    branches: [main]
+  # Allows you to run this workflow manually from the Actions tab on GitHub.
+  workflow_dispatch:
+
+jobs:
+  self-hosted-runner-build:
+    uses: ./.github/workflows/self-hosted.yml

@@ -1,0 +1,19 @@
+name: Self hosted runner
+
+on:
+  workflow_call:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Build & Deploy Locally
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          rsync -avz --delete dist/ /srv/www/raknaDocs/

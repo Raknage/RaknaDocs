@@ -58,7 +58,8 @@ Welcome to the **Home Server Setup & Deployment Runbook**. This guide is built a
     | **02. Ingress (Traffic)** | Caddy + Cloudflare DNS API | Nginx + Certbot SSL | Cloudflare Zero-Trust Tunnel | [Explore Layer 2 →](/home-server/02-ingress-and-routing) |
     | **03. Runtimes** | Node.js via `fnm` | Python `venv` Environments | System Env Vars (`/etc/environment`) | [Explore Layer 3 →](/home-server/03-runtimes) |
     | **04. Database** | Docker Volume Persistence Mounts | Bare-Metal PostgreSQL / MariaDB | Automated `pg_dump` CRON Backups | [Explore Layer 4 →](/home-server/04-database-and-storage) |
-    | **05. Deployment** | Docker Compose Stacks | Bare-Metal Systemd Services | Hybrid `host.docker.internal` | [Explore Layer 5 →](/home-server/05-deployment-strategies) |
+    | **05. GitHub Actions & CI/CD** | Self-Hosted Runner | Static Site SSH Sync | PR Preview Deployments | [Explore Layer 5 →](/home-server/05-github-actions-cicd) |
+    | **06. Docker Deployment** | Embedded Caddy Container | Direct Host Caddy Serving | BuildKit Cache Mounts | [Explore Layer 6 →](/home-server/06-docker-deployment-options) |
   </TabItem>
 </Tabs>
 
@@ -90,9 +91,14 @@ Welcome to the **Home Server Setup & Deployment Runbook**. This guide is built a
   →](/home-server/04-database-and-storage)
 </Card>
 
-  <Card title="05. Deployment Strategies" icon="rocket">
-    Service lifecycle orchestration: Multi-container Docker Compose stacks (`restart: always`), native systemd service units (`journalctl`), and hybrid deployments.
-    [Explore Deployment Strategies →](/home-server/05-deployment-strategies)
+<Card title="05. GitHub Actions & CI/CD Pipelines" icon="rocket">
+  Automated deployment workflows: Self-hosted runners, remote SSH sync, and PR preview environments.
+  [Explore CI/CD Pipelines →](/home-server/05-github-actions-cicd)
+</Card>
+
+  <Card title="06. Docker & Containerized Deployments" icon="open-book">
+    Containerized deployment patterns: Embedded Caddy containers vs direct host Caddy serving, BuildKit caching optimizations, and `.dockerignore`.
+    [Explore Docker Deployments →](/home-server/06-docker-deployment-options)
   </Card>
 </CardGrid>
 
