@@ -108,7 +108,7 @@ Download the official **Ubuntu Server LTS ISO** (24.04 LTS or 26.04 LTS) and wri
     sudo apt update && sudo apt upgrade -y
 
     # Install essential editing, retrieval, and monitoring tools
-    sudo apt install -y nano curl git btop btrfs-progs tmux unzip
+    sudo apt install -y nano curl git btop btrfs-progs tmux unzip fail2ban
     ```
 
 </Steps>
@@ -441,7 +441,17 @@ sudo ufw enable
 
 ---
 
-#### Optional: Web-Based Management (Cockpit)
+#### fail2ban
+
+Make sure fail2ban is working
+
+```bash
+sudo systemctl enable fail2ban
+sudo fail2ban-client status
+sudo fail2ban-client status sshd
+```
+
+#### Web-Based Management (Cockpit)
 
 If you prefer a web GUI dashboard for server metrics, software updates, and terminal access:
 
