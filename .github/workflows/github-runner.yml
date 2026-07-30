@@ -28,6 +28,12 @@ jobs:
       - name: Build Static Site
         run: pnpm build
 
+      - name: Debug secret presence
+        run: |
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then echo "DEPLOY_HOST is EMPTY"; else echo "DEPLOY_HOST is set"; fi
+          if [ -z "${{ secrets.DEPLOY_USER }}" ]; then echo "DEPLOY_USER is EMPTY"; else echo "DEPLOY_USER is set"; fi
+          if [ -z "${{ secrets.DEPLOY_SSH_KEY }}" ]; then echo "DEPLOY_SSH_KEY is EMPTY"; else echo "DEPLOY_SSH_KEY is set"; fi
+
       - name: Deploy via rsync over SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
