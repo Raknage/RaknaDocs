@@ -28,21 +28,43 @@ jobs:
       - name: Build Static Site
         run: pnpm build
 
-      - name: Debug secret presence
-        run: |
-          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then echo "DEPLOY_HOST is EMPTY"; else echo "DEPLOY_HOST is set"; fi
-          if [ -z "${{ secrets.DEPLOY_USER }}" ]; then echo "DEPLOY_USER is EMPTY"; else echo "DEPLOY_USER is set"; fi
-          if [ -z "${{ secrets.DEPLOY_SSH_KEY }}" ]; then echo "DEPLOY_SSH_KEY is EMPTY"; else echo "DEPLOY_SSH_KEY is set"; fi
-
-      - name: Deploy via rsync over SSH
+      - name: Setup SSH key
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          wc -l ~/.ssh/deploy_key
+          head -1 ~/.ssh/deploy_key
 
-          rsync -avz --delete -e "ssh -i ~/.ssh/deploy_key" \
+      - name: Keyscan host
+        run: |
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          echo "Keyscan exit code: $?"
+          cat ~/.ssh/known_hosts | wc -l
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "echo SSH connection successful" || echo "SSH FAILED with code $?"
+
+      - name: Deploy via rsync
+        run: |
+          rsync -avz --delete -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             ./dist/ \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/srv/www/raknadocs_gh/
+
+      # - name: Deploy via rsync over SSH
+      #   env:
+      #     SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      #   run: |
+      #     mkdir -p ~/.ssh
+      #     echo "$SSH_KEY" > ~/.ssh/deploy_key
+      #     chmod 600 ~/.ssh/deploy_key
+      #     ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      #     rsync -avz --delete -e "ssh -i ~/.ssh/deploy_key" \
+      #       ./dist/ \
+      #       ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/srv/www/raknadocs_gh/
