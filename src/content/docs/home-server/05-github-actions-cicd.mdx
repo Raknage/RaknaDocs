@@ -24,11 +24,56 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 For static site generators like **Astro**, offloading the `pnpm build` process to GitHub's free runners saves home server CPU and RAM. Once built, only the generated `dist/` directory is synced over SSH to the server's web root.
 
-### 1. GitHub Actions Workflow (`.github/workflows/deploy-static.yml`)
+Switching to GitHub-hosted runners means the build now happens on a throwaway GitHub VM, so getting files onto `neuromancer` requires SSH. Here's how to do it while keeping the same hardened posture as the rest of your setup (key-only, no root, minimal blast radius).
+
+### 1. Create a dedicated, restricted deploy user
+
+Don't reuse `toni` or reuse `ghrunner` as-is (it's `nologin`, which is fine — but let's be explicit about what this account can do). A deploy account should be able to **log in via SSH key only**, and ideally be restricted to _only_ running the deploy command, not a general shell:
+
+```bash
+sudo adduser --system --shell /bin/bash --home /srv/deploy/raknadocs --group deploy-raknadocs
+sudo usermod -aG webdeploy deploy-raknadocs
+```
+
+Note it needs `/bin/bash` (not `nologin`) since it's now doing an actual SSH login — but we'll lock down what that login can do in step 3.
+
+### 2. Generate a dedicated deploy keypair
+
+Generate this **on your machine**, not on the server — the private half goes into GitHub Secrets, never onto disk on `neuromancer`:
+
+```bash
+ssh-keygen -t ed25519 -f ~/deploy_raknadocs_key -C "gh-actions-deploy-raknadocs" -N ""
+```
+
+This gives you `deploy_raknadocs_key` (private) and `deploy_raknadocs_key.pub` (public).
+
+### 3. Install the public key, restricted to one command
+
+```bash
+sudo mkdir -p /srv/www/raknadocs_gh/.ssh
+sudo tee /srv/www/raknadocs_gh/.ssh/authorized_keys > /dev/null <<'EOF'
+command="rsync --server -logDtprze.iLsfxC --delete . /srv/www/raknadocs_gh/",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA....YOUR_KEY_HERE gh-actions-deploy-raknadocs
+EOF
+
+sudo chown -R deploy-raknadocs:deploy-raknadocs /srv/www/raknadocs_gh/.ssh
+sudo chmod 700 /srv/www/raknadocs_gh/.ssh
+sudo chmod 600 /srv/www/raknadocs_gh/.ssh/authorized_keys
+```
+
+The `command="..."` forced-command is the important part: even if this key were ever leaked, it can **only** run that exact `rsync` invocation — no interactive shell, no arbitrary commands, no port forwarding. Paste your real public key content in place of the placeholder.
+
+### 4. Add the private key + host details to GitHub Secrets
+
+In the repo's **Settings → Secrets and variables → Actions**, add:
+
+- `DEPLOY_SSH_KEY` — contents of `deploy_raknadocs_key` (private key)
+- `DEPLOY_HOST` — `YOUR_SERVER_ADDRESS_HERE`
+- `DEPLOY_USER` — `deploy-raknadocs`
+
+### 5. Workflow
 
 ```yaml
-name: Deploy Static Astro Site
-
+name: Build and Deploy
 on:
   push:
     branches: [main]
@@ -38,17 +83,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 11
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: "pnpm"
 
       - name: Install Dependencies
@@ -57,29 +102,47 @@ jobs:
       - name: Build Static Site
         run: pnpm build
 
-      - name: Sync dist/ to Home Server via SSH
-        uses: easingthemes/ssh-deploy-5.5@v4
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          REMOTE_HOST: ${{ secrets.SERVER_IP }}
-          REMOTE_USER: toni
-          SOURCE: "dist/"
-          TARGET: "/srv/www/raknaDocs"
-          ARGS: "-avz --delete"
+      - name: Deploy via rsync over SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+          rsync -avz --delete -e "ssh -i ~/.ssh/deploy_key" \
+            ./dist/ \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/srv/www/raknadocs_gh/
 ```
 
-### 2. Host Caddy Configuration (`/etc/caddy/Caddyfile`)
+### 6. Firewall implications
 
-```ini
-docs.example.com {
-    root * /srv/www/raknaDocs
-    file_server
-}
+Since GitHub-hosted runners use a huge, constantly-changing range of IPs, you can't allowlist them in `ufw` the way you might for a fixed IP. That's fine — your security here rests on:
+
+- Key-only auth (already your setup)
+- The **forced command** restricting this specific key to one harmless operation
+- Fail2ban still protecting against brute-force attempts on the SSH port generally
+
+If you want extra isolation, you could restrict this specific user further in `sshd_config` with a `Match User` block:
+
 ```
+Match User deploy-raknadocs
+    PasswordAuthentication no
+    AllowTcpForwarding no
+    X11Forwarding no
+    PermitTTY no
+```
+
+This is redundant with the `authorized_keys` restrictions but adds defense-in-depth at the daemon level too.
 
 ---
 
 ## ⚡ Strategy 2: GitHub Actions + Self-Hosted Runner
+
+<Aside>
+  [Setup user and group for the runner](/reference/user-management/#github-runner-user-setup)
+</Aside>
 
 A **Self-Hosted Runner** runs directly on your home server host. It polls GitHub securely via outbound HTTPS, eliminating the need to expose SSH ports or create firewall rules.
 
@@ -90,7 +153,7 @@ A **Self-Hosted Runner** runs directly on your home server host. It polls GitHub
 
    ```bash
    # Create a folder
-   mkdir actions-runner && cd actions-runner
+   mkdir -p /srv/runners/gh-raknage && cd /srv/runners/gh-raknage
 
    # Download the latest runner package
    curl -o actions-runner-linux-x64-2.336.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz
@@ -98,11 +161,16 @@ A **Self-Hosted Runner** runs directly on your home server host. It polls GitHub
    # Extract the installer
    tar xzf ./actions-runner-linux-x64-2.336.0.tar.gz
 
-   # Configure the runner with repository URL and token
-   ./config.sh --url https://github.com/yourusername/raknaDocs --token YOUR_TOKEN
+   # Fix permissions
+   sudo chown -R ghrunner:webdeploy /srv/runners
+   sudo find /srv/runners -type d -exec chmod 2775 {} \;   # rwxrwsr-x, SGID
+   sudo find /srv/runners -type f -exec chmod 764 {} \;    # rwxrw-r--
 
-   # Install as background systemd service
-   sudo ./svc.sh install
+   # Configure the runner with repository URL and token
+   sudo -u ghrunner ./config.sh --url https://github.com/Raknage/RaknaDocs --token <YOUR_TOKEN>
+
+   # Install as background systemd service as the ghrunner user
+   sudo ./svc.sh install ghrunner
    sudo ./svc.sh start
    ```
 
@@ -114,18 +182,25 @@ A **Self-Hosted Runner** runs directly on your home server host. It polls GitHub
    on:
      push:
        branches: [main]
+     # Allows you to run this workflow manually from the Actions tab on GitHub.
+     workflow_dispatch:
 
    jobs:
      deploy:
        runs-on: self-hosted
        steps:
          - name: Checkout Code
-           uses: actions/checkout@v4
+           uses: actions/checkout@v7
+           with:
+             ref: main
 
-         - name: Build & Deploy Locally
-           run: |
-             pnpm install --frozen-lockfile
-             pnpm build
+         - uses: voidzero-dev/setup-vp@v1
+           with:
+             cache: true
+             run-install: true
+
+         - run: |
+             vp run vp_build
              rsync -avz --delete dist/ /srv/www/raknaDocs/
    ```
 
@@ -154,7 +229,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
-          username: toni
+          username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /srv/www/raknaDocs
@@ -200,7 +275,7 @@ jobs:
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           REMOTE_HOST: ${{ secrets.SERVER_IP }}
-          REMOTE_USER: toni
+          REMOTE_USER: ${{ secrets.DEPLOY_USER }}
           SOURCE: "dist/"
           TARGET: "/srv/www/raknaDocs/previews/pr-${{ github.event.number }}"
           ARGS: "-avz --delete"
@@ -238,7 +313,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
-          username: toni
+          username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             rm -rf /srv/www/raknaDocs/previews/pr-${{ github.event.number }}

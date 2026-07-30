@@ -118,4 +118,5 @@ git push origin main
 [] Copy one line of text from code blocks
 [] pg_basebackup/WAL archiving for backups of @postgres subvolume
 [] Coolify
-[]
+[x] Automatic security updates
+[] snapper snapshot during deployment
