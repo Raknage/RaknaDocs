@@ -9,3 +9,4 @@ on:
 jobs:
   self-hosted-runner-build:
     uses: ./.github/workflows/github-runner.yml
+    secrets: inherit
